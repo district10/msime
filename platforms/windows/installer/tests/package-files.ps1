@@ -1,0 +1,361 @@
+$ErrorActionPreference = 'Stop'
+Set-StrictMode -Version Latest
+$fixture = Join-Path ([IO.Path]::GetTempPath()) ('msime-package-' + [Guid]::NewGuid())
+function Write-Fixture([string]$Relative, [string]$Text = 'fixture') {
+    $path = Join-Path $fixture $Relative
+    New-Item -ItemType Directory -Force -Path (Split-Path $path) | Out-Null
+    [IO.File]::WriteAllText($path, $Text)
+}
+try {
+    $installer = Join-Path $fixture 'installer'
+    New-Item -ItemType Directory -Force -Path $installer | Out-Null
+    Copy-Item (Join-Path $PSScriptRoot '../Prepare-PackageFiles.ps1') $installer
+    Copy-Item (Join-Path $PSScriptRoot '../Get-VerifiedDesktopResources.ps1') $installer
+    Copy-Item (Join-Path $PSScriptRoot '../msime_setup.iss') $installer
+    Copy-Item (Join-Path $PSScriptRoot '../config.default.toml') $installer
+    Copy-Item (Join-Path $PSScriptRoot '../assets') $installer -Recurse
+    foreach ($file in @(
+        'server/build-release/bin/Release/MetasequoiaImeServer.exe',
+        'server/build-release/bin/Release/MetasequoiaImeServer.pdb',
+        'server/build-release/bin/Release/MetasequoiaImeWatchdog.exe',
+        'server/build-release/bin/Release/MetasequoiaImeWatchdog.pdb',
+        'server/build-release/bin/Release/msime-mcp.exe',
+        'server/build-release/bin/Release/msime-mcp.pdb',
+        'server/build-release/bin/Release/MetasequoiaImeServerTests.exe',
+        'server/build-release/bin/Release/MetasequoiaImeServerTests.pdb',
+        'server/build-release/bin/Release/test_webview_contract.exe',
+        'server/build-release/bin/Release/test_webview_contract.pdb',
+        'server/build-release/bin/Release/windows-first-run.exe',
+        'server/build-release/bin/Release/nested/windows-server-launch.exe',
+        'server/build-release/bin/Release/nested/windows-server-launch.pdb',
+        'server/build-release/bin/Release/msime-client-prepare.exe',
+        'server/build-release/bin/Release/msime-client-prepare.pdb',
+        'server/build-release/bin/Release/msime-client-settings.exe',
+        'server/build-release/bin/Release/msime-client-settings.pdb',
+        'server/build-release/bin/Release/MSIME.exe',
+        'server/build-release/bin/Release/MSIME.pdb',
+        'windows/build32-release/Release/MetasequoiaImeTsf.dll',
+        'windows/build32-release/Release/MetasequoiaImeTsf.pdb',
+        'windows/build64-release/Release/MetasequoiaImeTsf.dll',
+        'windows/build64-release/Release/MetasequoiaImeTsf.pdb',
+        'THIRD_PARTY_NOTICES.txt',
+        'LICENSE',
+        'target/release/msime-desktop.exe',
+        'target/handwriting-model/handwriting-zh_CN.model',
+        'target/handwriting-model/HandwritingModel-LICENSE.txt',
+        'target/language-dictionaries/zhuyin.db',
+        'target/language-dictionaries/libchewing_data_LICENSE.txt',
+        'resources/helpcodes/helpcode.txt',
+        'resources/helpcodes/NOTICE.md',
+        'resources/sound-packs/default/plugin.toml',
+        'resources/sound-packs/default/key.wav'
+    )) { Write-Fixture $file }
+    Write-Fixture 'windows/build32-release/Release/msime_host_api.dll' 'synthetic x86 host'
+    Write-Fixture 'windows/build64-release/Release/msime_host_api.dll' 'synthetic x64 host'
+    Write-Fixture 'windows/build32-release/Release/synthetic-runtime.dll' 'synthetic x86 dependency'
+    Write-Fixture 'windows/build64-release/Release/synthetic-runtime.dll' 'synthetic x64 dependency'
+    $english = Join-Path $fixture 'target/desktop-resources/english.db'
+    New-Item -ItemType Directory -Force (Split-Path -Parent $english) | Out-Null
+    python -c "import sqlite3,sys; sqlite3.connect(sys.argv[1]).execute('CREATE TABLE english_words(word TEXT,display TEXT,weight INTEGER,PRIMARY KEY(word,display))')" $english
+    if ($LASTEXITCODE -ne 0) { throw 'Failed to create packaging fixture' }
+    $artifacts = @(
+        foreach ($name in @('msime.db', 'english.db', 'others.db', 'dict_japanese.dat',
+                            'mozc_dictionary_oss_README.txt', 'dictionary-manifest.json')) {
+            if ($name -ne 'english.db') { Write-Fixture "target/desktop-resources/$name" "synthetic pinned $name" }
+            $path = Join-Path $fixture "target/desktop-resources/$name"
+            @{ name = $name; size = (Get-Item $path).Length; sha256 = (Get-FileHash $path).Hash.ToLowerInvariant() }
+        }
+    )
+    Write-Fixture 'resources/desktop-dictionary.lock.json' (@{
+        source_commit = ('a' * 40); artifacts = $artifacts
+    } | ConvertTo-Json -Depth 5)
+    Write-Fixture 'target/desktop-resources/unlisted-private-file.txt' 'synthetic excluded data'
+    Write-Fixture 'server/build-release/bin/Release/resources/stale.txt' 'synthetic stale bundle'
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TargetVersion '2026.9.1'
+    foreach ($artifact in $artifacts) {
+        $path = Join-Path $installer "server_exe/resources/$($artifact.name)"
+        if ((Get-FileHash $path).Hash -ne $artifact.sha256) { throw 'Packaged resource hash mismatch' }
+    }
+    if (Test-Path (Join-Path $installer 'server_exe/resources/unlisted-private-file.txt')) {
+        throw 'Packaged an unlisted resource'
+    }
+    if (Test-Path (Join-Path $installer 'server_exe/resources/stale.txt')) {
+        throw 'Packaged unverified native build resources'
+    }
+    $pinned = Join-Path $fixture 'target/desktop-resources/msime.db'
+    $originalPinned = [IO.File]::ReadAllText($pinned)
+    foreach ($bad in @('short', ('x' * $originalPinned.Length))) {
+        [IO.File]::WriteAllText($pinned, $bad)
+        $rejected = $false
+        try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $true }
+        if (-not $rejected) { throw 'Invalid pinned resource accepted' }
+        if ([IO.File]::ReadAllText((Join-Path $installer 'server_exe/resources/msime.db')) -ne $originalPinned) {
+            throw 'Failed resource preflight damaged previous staging'
+        }
+    }
+    [IO.File]::WriteAllText($pinned, $originalPinned)
+    foreach ($file in @('tsf_dll/32/MetasequoiaImeTsf.dll', 'tsf_dll/32/MetasequoiaImeTsf.pdb',
+                         'tsf_dll/64/MetasequoiaImeTsf.dll', 'tsf_dll/64/MetasequoiaImeTsf.pdb',
+                         'server_exe/MetasequoiaImeServer.pdb',
+                         'server_exe/MetasequoiaImeWatchdog.exe',
+                         'server_exe/MetasequoiaImeWatchdog.pdb',
+                         'server_exe/msime-mcp.exe',
+                         'server_exe/msime-mcp.pdb',
+                         'server_exe/msime-client-settings.exe',
+                         'server_exe/msime-client-settings.pdb',
+                         'server_exe/MSIME.exe',
+                         'server_exe/MSIME.pdb',
+                         'server_exe/msime-client-prepare.exe',
+                         'server_exe/msime-client-prepare.pdb',
+                         'server_exe/handwriting/handwriting-zh_CN.model',
+                         'server_exe/handwriting/HandwritingModel-LICENSE.txt',
+                         'app_data/helpcodes/helpcode.txt',
+                         'app_data/sound-packs/default/plugin.toml', 'app_data/sound-packs/default/key.wav',
+                         'THIRD_PARTY_NOTICES.txt', 'LICENSE.txt')) {
+        if (-not (Test-Path (Join-Path $installer $file))) { throw "Missing packaged file: $file" }
+    }
+    if (Test-Path (Join-Path $installer 'app_data/helpcodes/NOTICE.md')) { throw 'Staged a helpcode notice as a table' }
+    # The Zhuyin dictionary travels beside resources with its licence; the absent Cantonese one leaves that scheme unavailable, and a dictionary without its licence is refused.
+    foreach ($name in @('zhuyin.db', 'libchewing_data_LICENSE.txt')) {
+        if (-not (Test-Path (Join-Path $installer "server_exe/language-dictionaries/$name"))) { throw "Missing language dictionary file: $name" }
+    }
+    if (Test-Path (Join-Path $installer 'server_exe/language-dictionaries/cantonese.db')) { throw 'Packaged a Cantonese dictionary that was not provided' }
+    Write-Fixture 'target/language-dictionaries/cantonese.db'
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $_.Exception.Message -match 'rime_cantonese_LICENSE' }
+    if (-not $rejected) { throw 'A language dictionary without its licence was accepted' }
+    Remove-Item (Join-Path $fixture 'target/language-dictionaries/cantonese.db') -Force
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture
+    foreach ($testFile in @(
+        'server_exe/MetasequoiaImeServerTests.exe',
+        'server_exe/MetasequoiaImeServerTests.pdb',
+        'server_exe/test_webview_contract.exe',
+        'server_exe/test_webview_contract.pdb',
+        'server_exe/windows-first-run.exe',
+        'server_exe/nested/windows-server-launch.exe',
+        'server_exe/nested/windows-server-launch.pdb'
+    )) {
+        if (Test-Path (Join-Path $installer $testFile)) { throw "Packaged a test file: $testFile" }
+    }
+    $serverPdbFixture = Join-Path $fixture 'server/build-release/bin/Release/MetasequoiaImeServer.pdb'
+    Remove-Item $serverPdbFixture -Force
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $_.Exception.Message -match 'PDB' }
+    if (-not $rejected) { throw 'Missing production PDB was accepted' }
+    [IO.File]::WriteAllText($serverPdbFixture, 'fixture')
+    $database = Join-Path $installer 'app_data/previous-staging.txt'
+    [IO.File]::WriteAllText($database, 'preserved user data')
+    foreach ($arch in @('32', '64')) {
+        $expected = if ($arch -eq '32') { 'synthetic x86 host' } else { 'synthetic x64 host' }
+        $packagedHost = Join-Path $installer "tsf_dll/$arch/msime_host_api.dll"
+        $expectedDependency = if ($arch -eq '32') { 'synthetic x86 dependency' } else { 'synthetic x64 dependency' }
+        if ([IO.File]::ReadAllText((Join-Path $installer "tsf_dll/$arch/synthetic-runtime.dll")) -ne $expectedDependency) {
+            throw 'Full package lost matching runtime dependency'
+        }
+        if ([IO.File]::ReadAllText($packagedHost) -ne $expected) { throw 'TSF Host DLL architecture mapping mismatch' }
+        $sourceHost = Join-Path $fixture "windows/build$arch-release/Release/msime_host_api.dll"
+        Remove-Item -LiteralPath $sourceHost
+        foreach ($lightMode in @($false, $true)) {
+            $rejected = $false
+            try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light:$lightMode }
+            catch { $rejected = $_.Exception.Message -match 'msime_host_api.dll' }
+            if (-not $rejected) { throw 'Missing TSF Host DLL accepted' }
+            if ([IO.File]::ReadAllText($database) -ne 'preserved user data' -or
+                [IO.File]::ReadAllText($packagedHost) -ne $expected) { throw 'Missing Host DLL damaged previous staging' }
+        }
+        [IO.File]::WriteAllText($sourceHost, $expected)
+    }
+    $watchdog = Join-Path $fixture 'server/build-release/bin/Release/MetasequoiaImeWatchdog.exe'
+    Remove-Item -LiteralPath $watchdog
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light } catch { $rejected = $_.Exception.Message -match 'Watchdog' }
+    if (-not $rejected) { throw 'Missing watchdog was accepted' }
+    if ([IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Missing watchdog damaged previous staging' }
+    [IO.File]::WriteAllText($watchdog, 'fixture')
+    $desktop = Join-Path $fixture 'target/release/msime-desktop.exe'
+    $nativeDesktop = Join-Path $fixture 'server/build-release/bin/Release/msime-client-settings.exe'
+    Remove-Item -LiteralPath $nativeDesktop
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light } catch { $rejected = $_.Exception.Message -match 'WinUI' }
+    if (-not $rejected) { throw 'Missing WinUI settings shell was accepted' }
+    if ([IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Missing shell damaged previous staging' }
+    [IO.File]::WriteAllText($nativeDesktop, 'fixture')
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -TsfDirectory windows -ServerDirectory server -NoticesDirectory . -Light
+    if ([IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Light package replaced dictionary data' }
+    if (-not (Test-Path (Join-Path $installer 'server_exe/msime-client-settings.exe'))) { throw 'Light package lost WinUI settings shell' }
+    foreach ($arch in @('32', '64')) {
+        $expected = if ($arch -eq '32') { 'synthetic x86 host' } else { 'synthetic x64 host' }
+        if ([IO.File]::ReadAllText((Join-Path $installer "tsf_dll/$arch/msime_host_api.dll")) -ne $expected) {
+            throw 'Light package lost matching TSF Host DLL'
+        }
+        $expectedDependency = if ($arch -eq '32') { 'synthetic x86 dependency' } else { 'synthetic x64 dependency' }
+        if ([IO.File]::ReadAllText((Join-Path $installer "tsf_dll/$arch/synthetic-runtime.dll")) -ne $expectedDependency) {
+            throw 'Light package lost matching runtime dependency'
+        }
+    }
+    if (-not (Test-Path (Join-Path $installer 'server_exe/msime-client-prepare.exe'))) { throw 'Light package lost preparation tool' }
+    foreach ($testFile in @('windows-first-run.exe', 'nested/windows-server-launch.exe', 'nested/windows-server-launch.pdb')) {
+        if (Test-Path (Join-Path $installer "server_exe/$testFile")) { throw 'Light package contains a Client test artifact' }
+    }
+    if (Test-Path (Join-Path $installer 'server_exe/resources')) { throw 'Light package unexpectedly carries dictionaries' }
+    Write-Fixture 'custom build/shell.exe' 'synthetic alternate shell'
+    Write-Fixture 'server/build-release/bin/Release/msime-client-settings.exe' 'synthetic native shell'
+    Write-Fixture 'server/build-release/bin/Release/msime-client-settings.pdb' 'synthetic native symbols'
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light
+    if ([IO.File]::ReadAllText((Join-Path $installer 'server_exe/msime-client-settings.exe')) -ne 'synthetic native shell') {
+        throw 'Native WinUI output did not take precedence over old Cargo output'
+    }
+    Remove-Item -LiteralPath $desktop
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light
+    if ([IO.File]::ReadAllText((Join-Path $installer 'server_exe/msime-client-settings.pdb')) -ne 'synthetic native symbols') {
+        throw 'Native WinUI shell symbols were not packaged'
+    }
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -DesktopExecutable 'target/release/msime-desktop.exe' }
+    catch { $rejected = $_.Exception.Message -match 'WinUI' }
+    if (-not $rejected) { throw 'Missing explicit shell silently fell back to native output' }
+    [IO.File]::WriteAllText($desktop, 'fixture')
+    foreach ($shellPath in @('custom build/shell.exe', (Join-Path $fixture 'custom build/shell.exe'))) {
+        & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -DesktopExecutable $shellPath
+        if ([IO.File]::ReadAllText((Join-Path $installer 'server_exe/msime-client-settings.exe')) -ne 'synthetic alternate shell') {
+            throw 'Explicit settings shell path was not packaged'
+        }
+        if ([IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Shell override replaced dictionary data' }
+        if (Test-Path (Join-Path $installer 'server_exe/msime-client-settings.pdb')) {
+            throw 'Explicit shell inherited unrelated native symbols'
+        }
+    }
+    foreach ($name in @('handwriting-zh_CN.model', 'HandwritingModel-LICENSE.txt')) {
+        if (-not (Test-Path (Join-Path $installer "server_exe/handwriting/$name"))) {
+            throw "Light package lost handwriting resource: $name"
+        }
+    }
+    $notice = Join-Path $fixture 'target/handwriting-model/HandwritingModel-LICENSE.txt'
+    Remove-Item -LiteralPath $notice
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $true }
+    if (-not $rejected) { throw 'Missing handwriting license was accepted' }
+    if ([IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Missing license damaged previous staging' }
+    [IO.File]::WriteAllText($notice, 'fixture')
+    $factory = Join-Path $installer 'config.default.toml'
+    $originalFactory = [IO.File]::ReadAllText($factory)
+    foreach ($invalid in @(
+        ('schema = "invalid"' + "`n" + 'theme_mode = "system"'),
+        ('schema = "quanpin"' + "`n" + 'theme_mode = "invalid"'),
+        ('schema = "quanpin"' + "`n" + 'theme_mode = "system"' + "`n" + 'diagnostic_log = true')
+    )) {
+        [IO.File]::WriteAllText($factory, $invalid)
+        $rejected = $false
+        try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture } catch { $rejected = $true }
+        if (-not $rejected) { throw 'Invalid factory configuration was accepted' }
+        if (-not (Test-Path $database) -or [IO.File]::ReadAllText($database) -ne 'preserved user data') { throw 'Invalid factory configuration damaged previous staging' }
+    }
+    [IO.File]::WriteAllText($factory, $originalFactory)
+    foreach ($mapping in @(@('32', 'x86'), @('64', 'x64'))) {
+        $native = Join-Path $fixture "target/windows-full/$($mapping[1])/bin"
+        New-Item -ItemType Directory -Force $native | Out-Null
+        foreach ($name in @('MetasequoiaImeTsf.dll', 'MetasequoiaImeTsf.pdb')) {
+            Copy-Item (Join-Path $fixture "windows/build$($mapping[0])-release/Release/$name") $native
+        }
+        [IO.File]::WriteAllText((Join-Path $native 'msime_host_api.dll'), "native $($mapping[1]) host")
+    }
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory 'server/build-release/bin/Release'
+    foreach ($mapping in @(@('32', 'x86'), @('64', 'x64'))) {
+        if ([IO.File]::ReadAllText((Join-Path $installer "tsf_dll/$($mapping[0])/msime_host_api.dll")) -ne "native $($mapping[1]) host") {
+            throw 'Native build directory default was not selected'
+        }
+    }
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light `
+        -ServerReleaseDirectory 'server/build-release/bin/Release' `
+        -Tsf32ReleaseDirectory 'windows/build32-release/Release' -Tsf64ReleaseDirectory 'windows/build64-release/Release'
+    foreach ($mapping in @(@('32', 'x86'), @('64', 'x64'))) {
+        if ([IO.File]::ReadAllText((Join-Path $installer "tsf_dll/$($mapping[0])/msime_host_api.dll")) -ne "synthetic $($mapping[1]) host") {
+            throw 'Explicit TSF directory override was ignored'
+        }
+    }
+    Write-Fixture 'target/windows-notices/THIRD_PARTY_NOTICES.txt' 'synthetic collected notices'
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory 'server/build-release/bin/Release'
+    if ([IO.File]::ReadAllText((Join-Path $installer 'THIRD_PARTY_NOTICES.txt')) -ne 'synthetic collected notices') {
+        throw 'Collected notice default not selected'
+    }
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory 'server/build-release/bin/Release' -NoticesDirectory .
+    if ([IO.File]::ReadAllText((Join-Path $installer 'THIRD_PARTY_NOTICES.txt')) -ne 'fixture') {
+        throw 'Explicit notice directory override ignored'
+    }
+    # The on-device speech runtime rides beside the Server: all three libraries, or none.
+    $voiceRuntimeLibraries = @('sherpa-onnx-c-api.dll', 'onnxruntime.dll', 'onnxruntime_providers_shared.dll')
+    $serverOutput = 'server/build-release/bin/Release'
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput
+    foreach ($library in $voiceRuntimeLibraries) {
+        if (Test-Path (Join-Path $installer "server_exe/$library")) { throw "Packaged a voice runtime that was never built: $library" }
+    }
+    foreach ($library in $voiceRuntimeLibraries) {
+        Write-Fixture "target/voice-runtime/windows-x64/$library" "fetched $library"
+    }
+    Write-Fixture 'target/voice-runtime/windows-x64/.archive/runtime.tar.bz2' 'synthetic cached archive'
+    # The runtime's licenses must be in the notices it ships with: the collection above predates them and is refused, leaving the previous staging alone.
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput }
+    catch { $rejected = $_.Exception.Message -match 'sherpa-onnx, ONNX Runtime' }
+    if (-not $rejected) { throw 'Voice runtime packaged without its license notices' }
+    if (Test-Path (Join-Path $installer 'server_exe/sherpa-onnx-c-api.dll')) { throw 'Refused notices still staged the voice runtime' }
+    if ([IO.File]::ReadAllText((Join-Path $installer 'THIRD_PARTY_NOTICES.txt')) -ne 'synthetic collected notices') {
+        throw 'Refused notices replaced the staged notices'
+    }
+    Write-Fixture 'target/windows-notices/THIRD_PARTY_NOTICES.txt' 'synthetic ONNX Runtime notice only'
+    $rejected = $false
+    try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput }
+    catch { $rejected = $_.Exception.Message -match 'sherpa-onnx' -and $_.Exception.Message -notmatch 'ONNX Runtime）' }
+    if (-not $rejected) { throw 'Voice runtime packaged without the sherpa-onnx license' }
+    $voiceNotices = "synthetic collected notices`n===== sherpa-onnx 1.13.8 (sherpa-onnx-c-api.dll), Apache License 2.0 =====`n===== ONNX Runtime (onnxruntime.dll, onnxruntime_providers_shared.dll), MIT License ====="
+    Write-Fixture 'target/windows-notices/THIRD_PARTY_NOTICES.txt' $voiceNotices
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput
+    if ([IO.File]::ReadAllText((Join-Path $installer 'THIRD_PARTY_NOTICES.txt')) -ne $voiceNotices) {
+        throw 'Voice runtime notices not staged'
+    }
+    foreach ($library in $voiceRuntimeLibraries) {
+        if ([IO.File]::ReadAllText((Join-Path $installer "server_exe/$library")) -ne "fetched $library") {
+            throw "Fetched voice runtime not packaged beside the Server: $library"
+        }
+    }
+    if (Test-Path (Join-Path $installer 'server_exe/.archive')) { throw 'Packaged the voice runtime download cache' }
+    foreach ($library in $voiceRuntimeLibraries) {
+        Write-Fixture "custom runtime/$library" "custom $library"
+    }
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput `
+        -VoiceRuntimeDirectory (Join-Path $fixture 'custom runtime')
+    foreach ($library in $voiceRuntimeLibraries) {
+        if ([IO.File]::ReadAllText((Join-Path $installer "server_exe/$library")) -ne "custom $library") {
+            throw "Explicit voice runtime directory ignored: $library"
+        }
+    }
+    # Build-Client.ps1 stages the runtime into the Server output, which then wins over the fetch directory.
+    foreach ($library in $voiceRuntimeLibraries) {
+        Write-Fixture "$serverOutput/$library" "built $library"
+    }
+    & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput
+    foreach ($library in $voiceRuntimeLibraries) {
+        if ([IO.File]::ReadAllText((Join-Path $installer "server_exe/$library")) -ne "built $library") {
+            throw "Server output voice runtime not packaged: $library"
+        }
+    }
+    foreach ($partial in @($serverOutput, 'target/voice-runtime/windows-x64')) {
+        if ($partial -eq 'target/voice-runtime/windows-x64') {
+            # What the first pass left of the Server output copy, so the fetch directory is consulted.
+            Remove-Item -LiteralPath (Join-Path $fixture "$serverOutput/sherpa-onnx-c-api.dll"), (Join-Path $fixture "$serverOutput/onnxruntime_providers_shared.dll")
+        }
+        Remove-Item -LiteralPath (Join-Path $fixture "$partial/onnxruntime.dll")
+        $before = [IO.File]::ReadAllText((Join-Path $installer 'server_exe/sherpa-onnx-c-api.dll'))
+        $rejected = $false
+        try { & (Join-Path $installer 'Prepare-PackageFiles.ps1') -RepoRoot $fixture -Light -ServerReleaseDirectory $serverOutput }
+        catch { $rejected = $_.Exception.Message -match 'onnxruntime\.dll' -and $_.Exception.Message -notmatch 'sherpa-onnx-c-api' }
+        if (-not $rejected) { throw "Partial voice runtime accepted: $partial" }
+        if ([IO.File]::ReadAllText((Join-Path $installer 'server_exe/sherpa-onnx-c-api.dll')) -ne $before -or
+            [IO.File]::ReadAllText($database) -ne 'preserved user data') {
+            throw 'Partial voice runtime damaged previous staging'
+        }
+    }
+    Write-Host 'Full/light package contracts, provenance, exclusions and failure staging passed'
+} finally {
+    if (Test-Path $fixture) { Remove-Item $fixture -Recurse -Force }
+}

@@ -1,0 +1,410 @@
+name: MSIMEClient
+options:
+  deploymentTarget:
+    iOS: "17.0"
+  bundleIdPrefix: app.msime.ios
+  # false，否则 xcodegen 会为 platforms/ios 之上的路径（../../shared、../../target）建一层中间 group，
+  # 并用仓库根目录的名字命名它。那个名字是谁最后跑的 xcodegen、他的 worktree 叫什么——于是每个人重新
+  # 生成一次，工程就变一次，object ID 跟着大面积重排。改成 false 之后，在任意目录名下生成的工程逐字节
+  # 相同（实测两个不同名 worktree 的 project.pbxproj SHA-256 一致）。
+  createIntermediateGroups: false
+settings:
+  base:
+    SWIFT_VERSION: 5.0
+    DEVELOPMENT_TEAM: LXCL4Z68GU
+    MARKETING_VERSION: 0.51.0
+    CURRENT_PROJECT_VERSION: 1
+    PRODUCT_NAME: "$(TARGET_NAME)"
+schemes:
+  MSIMEClientTests:
+    build:
+      targets:
+        MSIMEKeyboardTests: all
+        MSIMEServiceTests: all
+        MSIMESharedTests: all
+    test:
+      targets:
+        - MSIMEKeyboardTests
+        - MSIMEServiceTests
+        - MSIMESharedTests
+  MSIMEDoubaoTransportTests:
+    build:
+      targets:
+        MSIMEDoubaoTransportTests: all
+    test:
+      targets:
+        - MSIMEDoubaoTransportTests
+  MSIMEClientUITests:
+    build:
+      targets:
+        MSIMEClientUITests: all
+    test:
+      targets:
+        - MSIMEClientUITests
+targets:
+  MSIMEApp:
+    type: application
+    platform: iOS
+    # 只为了一个 URL scheme。键盘扩展里没有 UIApplication,它要打开本应用只能走一个自己注册的 scheme;
+    # 其余的键仍由 GENERATE_INFOPLIST_FILE 和下面的 INFOPLIST_KEY_* 合进来,这个文件只放它们表达不了的这一项。
+    info:
+      path: App/Resources/Info.plist
+      properties:
+        CFBundleURLTypes:
+          - CFBundleURLName: app.msime.ios
+            CFBundleTypeRole: Editor
+            CFBundleURLSchemes: [msime]
+    sources:
+      - path: App/Sources
+      - path: App/Services
+      - path: ../../shared/backend
+        excludes:
+          - Tests/**
+          - Package.swift
+          - .build/**
+      - path: ../../shared/backend-ui
+      - path: SharedUI
+      - path: App/Resources/Assets.xcassets
+      - path: App/Resources/LaunchScreen.storyboard
+      - path: ../../target/ios/EngineResources/dictionary-manifest.json
+        buildPhase: resources
+      - path: SharedResources/MLKit-NOTICES.txt
+        buildPhase: resources
+      - path: SharedResources/MLKit-Dependencies.txt
+        buildPhase: resources
+      # Licences of the embedded SherpaOnnxC.xcframework below: sherpa-onnx (Apache-2.0) and the ONNX Runtime linked into it (MIT), plus the notices ONNX Runtime carries for what it bundles, shared with the desktops.
+      - path: SharedResources/VoiceRuntime-NOTICES.txt
+        buildPhase: resources
+      - path: ../linux/data/licenses/onnxruntime-ThirdPartyNotices.txt
+        buildPhase: resources
+      # The input engine in libmsime_host_api, linked into this app and into the keyboard extension it embeds, carries the Korean Hanja table from libhangul's data/hanja/hanja.txt, whose BSD-3-Clause licence requires the notice in binary distributions.
+      - path: ../../resources/licenses/libhangul-hanja-BSD-3-Clause.txt
+        buildPhase: resources
+      # The same engine's Cantonese and Zhuyin schemes take their syllables and words from data derived from rime-cantonese (CC BY 4.0) and libchewing-data (LGPL-2.1-or-later); their notices travel with every engine build even where those schemes are not offered.
+      - path: ../../resources/licenses/rime-cantonese-CC-BY-4.0.txt
+        buildPhase: resources
+      - path: ../../resources/licenses/libchewing-data-LGPL-2.1.txt
+        buildPhase: resources
+      - path: SharedResources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios
+        PRODUCT_NAME: MSIMEApp
+        CODE_SIGN_ENTITLEMENTS: App/Resources/MSIMEApp.entitlements
+        GENERATE_INFOPLIST_FILE: YES
+        # 主屏、设置和系统的应用列表都显示这个名字。没有它时 iOS 退回 CFBundleName,也就是 PRODUCT_NAME,装出来的图标底下写的是 MSIMEApp。
+        INFOPLIST_KEY_CFBundleDisplayName: 水杉输入法
+        # LaunchScreen.storyboard 一直被编进 bundle,但没有这个键就没人指向它,启动屏等于白打包。
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: "仅在你开始语音输入时录音：本地模型在本机识别，系统语音识别交由 iOS 处理，其他识别服务会把录音发送到你配置的服务。"
+        # 语音服务选「系统语音识别」时由 Speech 框架识别录音，第一次使用前系统按这句话询问授权。
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: "仅在你选择“系统语音识别”并开始录音时，用 iOS 的语音识别把录音转成文字。"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # VoicePolishPrompt.cpp includes shared/voice/PolishPrompt.h, which the desktop hosts build as C++17.
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES: AppIconForest AppIconSky AppIconDusk AppIconVermilion
+        ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS: YES
+        # 没有这一条时 `Color.accentColor` 是系统蓝,而设置行的图标块、列表里的控件都取它。资源里的两个值就是 MetasequoiaTheme.forestUIColor 的浅色与深色两支。
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        # The app embeds SherpaOnnxC.framework (dynamic) in Frameworks/; without this runpath dyld only searches /usr/lib/swift and the app is killed at launch with "Library not loaded: @rpath/SherpaOnnxC.framework".
+        LD_RUNPATH_SEARCH_PATHS:
+          - "$(inherited)"
+          - "@executable_path/Frameworks"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lmsime_host_api"
+          - "-lc++"
+          - "-lsqlite3"
+          - "-framework"
+          - Foundation
+          - "-framework"
+          - UIKit
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]: "$(SRCROOT)/../../target/ios/device"
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]: "$(SRCROOT)/../../target/ios/simulator"
+      configs:
+        # Without this the Debug build compiles out every `#if DEBUG` branch, which is where the
+        # UI-test fixtures and preview screens live -- the suite then drives an app that cannot
+        # show them.
+        Debug:
+          SWIFT_ACTIVE_COMPILATION_CONDITIONS: $(inherited) DEBUG
+    dependencies:
+      - target: MSIMEKeyboardExtension
+      - sdk: Security.framework
+      # 本地语音识别的 sherpa-onnx 运行时，只进主 App：键盘扩展的内存上限装不下任何一个模型。
+      # 构建前由 scripts/fetch_voice_runtime.py --platform ios 下载校验到 target/，不入库。
+      - framework: ../../target/voice-runtime/ios/SherpaOnnxC.xcframework
+        embed: true
+        codeSign: true
+  MSIMEKeyboardExtension:
+    type: app-extension
+    platform: iOS
+    info:
+      path: KeyboardExtension/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: 水杉输入法
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
+        NSExtension:
+          NSExtensionAttributes:
+            IsASCIICapable: true
+            PrefersRightToLeft: false
+            PrimaryLanguage: zh-Hans
+            RequestsOpenAccess: true
+          NSExtensionPointIdentifier: com.apple.keyboard-service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).KeyboardViewController"
+    sources:
+      - path: KeyboardExtension/Sources
+        excludes:
+          - keyboard/KeyboardServiceFallback.swift
+      - path: App/Services/BoundedFileReader.swift
+      - path: SharedUI
+      - path: ../../shared/backend/account/BackendAccountClient.swift
+      - path: ../../shared/backend/clients/BackendChatClient.swift
+      - path: ../../shared/backend/account/BackendAccountSession.swift
+      - path: ../../shared/backend/account/BackendAnonymousAccount.swift
+      - path: ../../shared/backend/storage/BackendLocalStore.swift
+      - path: ../../shared/backend/clients/BackendSnapshotClient.swift
+      # The keyboard's 云端 clipboard tab.
+      - path: ../../shared/backend/clients/BackendClipboardClient.swift
+      - path: App/Services/KeyboardAIService.swift
+      - path: KeyboardExtension/Sources/keyboard/KeyboardServiceFallback.swift
+      - path: ../../target/ios/EngineResources
+        buildPhase: resources
+        type: folder
+      # Staged by stage-resources.sh, empty unless offline gloss dictionaries were given to it.
+      - path: ../../target/ios/offline-glosses
+        buildPhase: resources
+        type: folder
+        optional: true
+      # Staged by stage-resources.sh beside EngineResources, where host-api looks for the Cantonese and Zhuyin dictionaries; empty when none were built or fetched, and those schemes are then not offered.
+      - path: ../../target/ios/language-dictionaries
+        buildPhase: resources
+        type: folder
+        optional: true
+      - path: SharedResources/KeyboardBrand.png
+        buildPhase: resources
+      - path: SharedResources/PrivacyInfo.xcprivacy
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.keyboard
+        PRODUCT_NAME: MSIMEKeyboardExtension
+        CODE_SIGN_ENTITLEMENTS: KeyboardExtension/Resources/MSIMEKeyboardExtension.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: "$(SRCROOT)/KeyboardExtension/Sources/core/MetasequoiaKeyboard-Bridging-Header.h"
+        EXCLUDED_SOURCE_FILE_NAMES[sdk=iphoneos*]: HandwritingInputViewFallback.swift
+        EXCLUDED_SOURCE_FILE_NAMES[sdk=iphonesimulator*]: HandwritingInputView.swift HandwritingDownloadSession.m
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lmsime_host_api"
+          - "-lc++"
+          - "-lsqlite3"
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]: "$(SRCROOT)/../../target/ios/device"
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]: "$(SRCROOT)/../../target/ios/simulator"
+    dependencies:
+      - sdk: Security.framework
+  MSIMEKeyboardTestHost:
+    type: application
+    platform: iOS
+    sources:
+      - path: KeyboardTestHost
+      - path: ../../target/ios/EngineResources
+        buildPhase: resources
+        type: folder
+      # Staged by stage-resources.sh, empty unless offline gloss dictionaries were given to it.
+      - path: ../../target/ios/offline-glosses
+        buildPhase: resources
+        type: folder
+        optional: true
+      # Staged by stage-resources.sh beside EngineResources, where host-api looks for the Cantonese and Zhuyin dictionaries; empty when none were built or fetched, and those schemes are then not offered.
+      - path: ../../target/ios/language-dictionaries
+        buildPhase: resources
+        type: folder
+        optional: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.keyboard-test-host
+        PRODUCT_NAME: MSIMEKeyboardTestHost
+        # The keyboard under test reads its preferences from the App Group container, so the host
+        # that loads it needs the same entitlement the extension ships with -- as the Apple
+        # client's test host does. Without it the container is refused and the host is killed
+        # partway through the suite, leaving most of it unreported.
+        CODE_SIGN_ENTITLEMENTS: KeyboardExtension/Resources/MSIMEKeyboardExtension.entitlements
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  MSIMEKeyboardTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: KeyboardTests
+      - path: App/Services/AISkinService.swift
+      - path: App/Services/BoundedFileReader.swift
+      - path: App/Services/CloudDictionaryTransfer.swift
+      - path: App/Services/CommunityPreviewFixtures.swift
+      - path: App/Services/DoubaoHostFrameCodec.swift
+      - path: App/Services/DoubaoVoiceCoordinator.swift
+      - path: App/Services/DoubaoWebSocketTransport.swift
+      - path: App/Services/KeyboardAIService.swift
+      - path: App/Services/SkinCommunityAPI.swift
+      - path: ../../shared/backend
+        excludes:
+          - Tests/**
+          - Package.swift
+          - .build/**
+      - path: KeyboardExtension/Sources
+        excludes:
+          - handwriting/HandwritingInputView.swift
+      - path: SharedUI
+      - path: SharedResources/KeyboardBrand.png
+        buildPhase: resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.keyboard-tests
+        PRODUCT_NAME: MSIMEKeyboardTests
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MSIMEKeyboardTestHost.app/MSIMEKeyboardTestHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lmsime_host_api"
+          - "-lc++"
+          - "-lsqlite3"
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]: "$(SRCROOT)/../../target/ios/device"
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]: "$(SRCROOT)/../../target/ios/simulator"
+    dependencies:
+      - target: MSIMEKeyboardTestHost
+      - sdk: Security.framework
+  MSIMEServiceTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: ServiceTests
+      - path: App/Sources/settings/AppIconSettingsView.swift
+      - path: App/Sources/settings/SettingsAutosave.swift
+      - path: App/Services/CustomService.swift
+      - path: App/Services/LocalSpeechModel.swift
+      - path: App/Services/LocalSpeechModelStore.swift
+      - path: App/Services/VoicePolish.swift
+      - path: App/Services/VoicePolishPrompt.cpp
+      - path: App/Services/DoubaoHostFrameCodec.swift
+      - path: App/Services/DoubaoVoiceCoordinator.swift
+      - path: App/Services/DoubaoWebSocketTransport.swift
+      - path: App/Services/WAVPCMExtractor.swift
+      - path: App/Services/VoiceLevel.swift
+      - path: App/Services/BoundedFileReader.swift
+      - path: SharedUI/core/AppServicesBridge.swift
+      - path: SharedUI/core/MetasequoiaTheme.swift
+      - path: SharedUI/core/SharedNumber.swift
+      - path: ../../shared/backend
+        excludes:
+          - Tests/**
+          - Package.swift
+          - .build/**
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.service-tests
+        CLANG_CXX_LANGUAGE_STANDARD: c++17
+        PRODUCT_NAME: MSIMEServiceTests
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lmsime_host_api"
+          - "-lc++"
+          - "-lsqlite3"
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]: "$(SRCROOT)/../../target/ios/device"
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]: "$(SRCROOT)/../../target/ios/simulator"
+    dependencies:
+      - sdk: Security.framework
+  MSIMESharedTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: tests
+        excludes:
+          - input/EnglishCapitalizationPolicyTests.swift
+          - settings/FrequencyAdjustmentPreferenceTests.swift
+          - input/HandwritingTests.swift
+          - build-native.sh
+          - tools/**
+      - path: KeyboardTests/input/InputSchemeTestSupport.swift
+      - path: App/Services/BoundedFileReader.swift
+      - path: App/Services/CustomService.swift
+      - path: App/Services/DoubaoHostFrameCodec.swift
+      - path: App/Services/DoubaoVoiceCoordinator.swift
+      - path: App/Services/DoubaoWebSocketTransport.swift
+      - path: App/Services/KeyboardAIService.swift
+      - path: ../../shared/backend
+        excludes:
+          - Tests/**
+          - Package.swift
+          - .build/**
+      - path: KeyboardExtension/Sources
+        excludes:
+          - handwriting/HandwritingInputView.swift
+          - keyboard/KeyboardServiceFallback.swift
+      - path: SharedUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.shared-tests
+        PRODUCT_NAME: MSIMESharedTests
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/MSIMEKeyboardTestHost.app/MSIMEKeyboardTestHost"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+        OTHER_LDFLAGS:
+          - "$(inherited)"
+          - "-lmsime_host_api"
+          - "-lc++"
+          - "-lsqlite3"
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]: "$(SRCROOT)/../../target/ios/device"
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]: "$(SRCROOT)/../../target/ios/simulator"
+    dependencies:
+      - target: MSIMEKeyboardTestHost
+      - sdk: Security.framework
+  MSIMEClientUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: UITests
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.uitests
+        PRODUCT_NAME: MSIMEClientUITests
+        ARCHS: arm64
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_FILE: ""
+        TEST_TARGET_NAME: MSIMEApp
+    dependencies:
+      - target: MSIMEApp
+  MSIMEDoubaoTransport:
+    type: framework
+    platform: iOS
+    sources:
+      - path: App/Services/DoubaoWebSocketTransport.swift
+      - path: App/Services/DoubaoVoiceCoordinator.swift
+      - path: App/Services/WAVPCMExtractor.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.transport
+        PRODUCT_NAME: MSIMEDoubaoTransport
+        ENABLE_TESTABILITY: YES
+  MSIMEDoubaoTransportTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: TransportTests
+    dependencies:
+      - target: MSIMEDoubaoTransport
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.msime.ios.transport.tests
+        PRODUCT_NAME: MSIMEDoubaoTransportTests

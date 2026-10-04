@@ -1,0 +1,45 @@
+#import <AppKit/AppKit.h>
+#import "../../src/candidate/CandidateChrome.h"
+
+#include <cassert>
+
+@interface CursorProbeButton : MSIMECandidateButton
+@property(nonatomic, strong) NSCursor *capturedCursor;
+@property(nonatomic) NSRect capturedRect;
+@end
+@implementation CursorProbeButton
+- (void)addCursorRect:(NSRect)rect cursor:(NSCursor *)cursor
+{
+    self.capturedRect = rect;
+    self.capturedCursor = cursor;
+}
+@end
+
+int main()
+{
+    @autoreleasepool
+    {
+        [NSApplication sharedApplication];
+        MSIMECandidateButton *button = [MSIMECandidateButton buttonWithTitle:@"1  候选" target:nil action:nil];
+        button.frame = NSMakeRect(0, 0, 160, 36);
+        button.hoverColor = [NSColor colorWithSRGBRed:0.2 green:0.3 blue:0.4 alpha:0.5];
+        [button updateTrackingAreas];
+        assert(!button.candidateHovered);
+        [button mouseEntered:(NSEvent *)[NSNull null]];
+        assert(button.candidateHovered);
+        [button mouseExited:(NSEvent *)[NSNull null]];
+        assert(!button.candidateHovered);
+        CursorProbeButton *cursorButton = [[CursorProbeButton alloc] initWithFrame:NSMakeRect(3, 4, 160, 36)];
+        [cursorButton resetCursorRects];
+        assert(NSEqualRects(cursorButton.capturedRect, cursorButton.bounds));
+        assert(cursorButton.capturedCursor == NSCursor.pointingHandCursor);
+        cursorButton.enabled = NO;
+        cursorButton.capturedCursor = nil;
+        cursorButton.capturedRect = NSZeroRect;
+        [cursorButton resetCursorRects];
+        assert(cursorButton.capturedCursor == nil);
+        assert(NSEqualRects(cursorButton.capturedRect, NSZeroRect));
+        puts("Candidate hover tracking passed");
+    }
+    return 0;
+}

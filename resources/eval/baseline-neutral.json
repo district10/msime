@@ -1,0 +1,414 @@
+{
+  "by_syllables": {
+    "10": {
+      "cases": 94,
+      "found": 0.926,
+      "mrr": 0.744,
+      "top1": 0.66,
+      "top1_char_prefix": 0.789,
+      "top5": 0.851,
+      "top9": 0.851
+    },
+    "11": {
+      "cases": 96,
+      "found": 0.875,
+      "mrr": 0.749,
+      "top1": 0.677,
+      "top1_char_prefix": 0.833,
+      "top5": 0.833,
+      "top9": 0.833
+    },
+    "12": {
+      "cases": 53,
+      "found": 0.868,
+      "mrr": 0.706,
+      "top1": 0.623,
+      "top1_char_prefix": 0.783,
+      "top5": 0.792,
+      "top9": 0.792
+    },
+    "13": {
+      "cases": 46,
+      "found": 0.891,
+      "mrr": 0.776,
+      "top1": 0.696,
+      "top1_char_prefix": 0.838,
+      "top5": 0.87,
+      "top9": 0.87
+    },
+    "14": {
+      "cases": 34,
+      "found": 0.765,
+      "mrr": 0.682,
+      "top1": 0.647,
+      "top1_char_prefix": 0.786,
+      "top5": 0.735,
+      "top9": 0.735
+    },
+    "15": {
+      "cases": 28,
+      "found": 0.75,
+      "mrr": 0.573,
+      "top1": 0.5,
+      "top1_char_prefix": 0.657,
+      "top5": 0.643,
+      "top9": 0.643
+    },
+    "16": {
+      "cases": 22,
+      "found": 0.727,
+      "mrr": 0.637,
+      "top1": 0.591,
+      "top1_char_prefix": 0.776,
+      "top5": 0.682,
+      "top9": 0.682
+    },
+    "6": {
+      "cases": 217,
+      "found": 0.931,
+      "mrr": 0.746,
+      "top1": 0.631,
+      "top1_char_prefix": 0.794,
+      "top5": 0.871,
+      "top9": 0.871
+    },
+    "7": {
+      "cases": 178,
+      "found": 0.921,
+      "mrr": 0.732,
+      "top1": 0.607,
+      "top1_char_prefix": 0.799,
+      "top5": 0.871,
+      "top9": 0.871
+    },
+    "8": {
+      "cases": 184,
+      "found": 0.929,
+      "mrr": 0.696,
+      "top1": 0.543,
+      "top1_char_prefix": 0.73,
+      "top5": 0.87,
+      "top9": 0.87
+    },
+    "9": {
+      "cases": 153,
+      "found": 0.882,
+      "mrr": 0.696,
+      "top1": 0.601,
+      "top1_char_prefix": 0.792,
+      "top5": 0.804,
+      "top9": 0.804
+    }
+  },
+  "by_tag": {
+    "harvested": {
+      "cases": 1105,
+      "found": 0.899,
+      "mrr": 0.719,
+      "top1": 0.614,
+      "top1_char_prefix": 0.784,
+      "top5": 0.839,
+      "top9": 0.839
+    }
+  },
+  "cases": 1105,
+  "gold_source": {
+    "database": 1,
+    "generated": 992
+  },
+  "overall": {
+    "cases": 1105,
+    "found": 0.899,
+    "mrr": 0.719,
+    "top1": 0.614,
+    "top1_char_prefix": 0.784,
+    "top5": 0.839,
+    "top9": 0.839
+  },
+  "sample_failures": [
+    {
+      "gold": "一天两次出动",
+      "id": "h-0001",
+      "input": "yitianliangcichudong",
+      "rank": 894,
+      "top1": "一天两次触动"
+    },
+    {
+      "gold": "中间包了韭菜",
+      "id": "h-0015",
+      "input": "zhongjianbaolejiucai",
+      "rank": 3,
+      "top1": "中间爆了韭菜"
+    },
+    {
+      "gold": "也不那么重要",
+      "id": "h-0018",
+      "input": "yebunamechongyao",
+      "rank": null,
+      "top1": "也不那么冲要"
+    },
+    {
+      "gold": "也是练功之道",
+      "id": "h-0021",
+      "input": "yeshiliangongzhidao",
+      "rank": 236,
+      "top1": "也是练功知道"
+    },
+    {
+      "gold": "二是规范程序",
+      "id": "h-0022",
+      "input": "ershiguifanchengxu",
+      "rank": 2,
+      "top1": "而是规范程序"
+    },
+    {
+      "gold": "但不全部脱开",
+      "id": "h-0027",
+      "input": "danbuquanbutuokai",
+      "rank": 2,
+      "top1": "但不全部拖开"
+    },
+    {
+      "gold": "但却非常重要",
+      "id": "h-0028",
+      "input": "danquefeichangchongyao",
+      "rank": null,
+      "top1": "但却非常充要"
+    },
+    {
+      "gold": "但来得这么快",
+      "id": "h-0030",
+      "input": "danlaidezhemekuai",
+      "rank": 2,
+      "top1": "但来的这么快"
+    },
+    {
+      "gold": "你更看好哪个",
+      "id": "h-0032",
+      "input": "nigengkanhaonage",
+      "rank": 2,
+      "top1": "你更看好那个"
+    },
+    {
+      "gold": "你的事迹感人",
+      "id": "h-0033",
+      "input": "nideshijiganren",
+      "rank": 195,
+      "top1": "你的世纪感人"
+    },
+    {
+      "gold": "做到事实清楚",
+      "id": "h-0038",
+      "input": "zuodaoshishiqingchu",
+      "rank": 2,
+      "top1": "做到实施清楚"
+    },
+    {
+      "gold": "关注老区发展",
+      "id": "h-0042",
+      "input": "guanzhulaooufazhan",
+      "rank": null,
+      "top1": "关注老欧发展"
+    },
+    {
+      "gold": "再次深表谢意",
+      "id": "h-0043",
+      "input": "zaicishenbiaoxieyi",
+      "rank": 60,
+      "top1": "在此深表协议"
+    },
+    {
+      "gold": "农民梦见豌豆",
+      "id": "h-0044",
+      "input": "nongminmengjianwandou",
+      "rank": 2,
+      "top1": "农民梦见完都"
+    },
+    {
+      "gold": "冲洗鸡肉要快",
+      "id": "h-0046",
+      "input": "chongxijirouyaokuai",
+      "rank": 2,
+      "top1": "冲洗肌肉要快"
+    },
+    {
+      "gold": "出具探伤报告",
+      "id": "h-0047",
+      "input": "chujutanshangbaogao",
+      "rank": null,
+      "top1": "出局摊上报告"
+    },
+    {
+      "gold": "去救一个奴婢",
+      "id": "h-0052",
+      "input": "qujiuyigenubi",
+      "rank": 2,
+      "top1": "去就一个奴婢"
+    },
+    {
+      "gold": "去看建党伟业",
+      "id": "h-0053",
+      "input": "qukanjiandangweiye",
+      "rank": 2,
+      "top1": "去看建档伟业"
+    },
+    {
+      "gold": "反应格外淡定",
+      "id": "h-0057",
+      "input": "fanyinggewaidanding",
+      "rank": 2,
+      "top1": "反映格外淡定"
+    },
+    {
+      "gold": "后面哨马探知",
+      "id": "h-0065",
+      "input": "houmianshaomatanzhi",
+      "rank": 2,
+      "top1": "后面哨马弹指"
+    },
+    {
+      "gold": "含泪挥别父母",
+      "id": "h-0067",
+      "input": "hanleihuibiefumu",
+      "rank": 2,
+      "top1": "含泪回别父母"
+    },
+    {
+      "gold": "哈登三分失准",
+      "id": "h-0069",
+      "input": "hadengsanfenshizhun",
+      "rank": 2,
+      "top1": "哈等三分失准"
+    },
+    {
+      "gold": "四要敢闯新路",
+      "id": "h-0071",
+      "input": "siyaoganchuangxinlu",
+      "rank": 2,
+      "top1": "四要敢闯心路"
+    },
+    {
+      "gold": "堆得乱七八糟",
+      "id": "h-0077",
+      "input": "duideluanqibazao",
+      "rank": 2,
+      "top1": "对的乱七八糟"
+    },
+    {
+      "gold": "多为砖木结构",
+      "id": "h-0078",
+      "input": "duoweizhuanmujiegou",
+      "rank": 2,
+      "top1": "多位砖木结构"
+    },
+    {
+      "gold": "女真南侵中原",
+      "id": "h-0083",
+      "input": "nvzhennanqinzhongyuan",
+      "rank": 2,
+      "top1": "女真南侵中院"
+    },
+    {
+      "gold": "好在心口如一",
+      "id": "h-0084",
+      "input": "haozaixinkouruyi",
+      "rank": 2,
+      "top1": "好在心口如意"
+    },
+    {
+      "gold": "如何打开销路",
+      "id": "h-0085",
+      "input": "ruhedakaixiaolu",
+      "rank": 3,
+      "top1": "如何打开小鹿"
+    },
+    {
+      "gold": "孟获措手不及",
+      "id": "h-0088",
+      "input": "menghuocuoshoubuji",
+      "rank": 2,
+      "top1": "猛火措手不及"
+    },
+    {
+      "gold": "实则寸步不让",
+      "id": "h-0090",
+      "input": "shizecunbuburang",
+      "rank": 2,
+      "top1": "实则存不不让"
+    },
+    {
+      "gold": "实力铸就口碑",
+      "id": "h-0091",
+      "input": "shilizhujiukoubei",
+      "rank": null,
+      "top1": "十里铸就口碑"
+    },
+    {
+      "gold": "就回总后去了",
+      "id": "h-0095",
+      "input": "jiuhuizonghouqule",
+      "rank": 3,
+      "top1": "就会总后去了"
+    },
+    {
+      "gold": "巩固打私成果",
+      "id": "h-0097",
+      "input": "gonggudasichengguo",
+      "rank": 148,
+      "top1": "巩固大四成果"
+    },
+    {
+      "gold": "差点不敢认了",
+      "id": "h-0098",
+      "input": "chadianbuganrenle",
+      "rank": 2,
+      "top1": "差点不敢忍了"
+    },
+    {
+      "gold": "帮你代取快递",
+      "id": "h-0099",
+      "input": "bangnidaiqukuaidi",
+      "rank": 3,
+      "top1": "帮你带去快递"
+    },
+    {
+      "gold": "年内不得狩猎",
+      "id": "h-0100",
+      "input": "nianneibudeshoulie",
+      "rank": 2,
+      "top1": "年内不得首列"
+    },
+    {
+      "gold": "开启警灯警报",
+      "id": "h-0105",
+      "input": "kaiqijingdengjingbao",
+      "rank": 2,
+      "top1": "开启静等警报"
+    },
+    {
+      "gold": "张辽一马当先",
+      "id": "h-0106",
+      "input": "zhangliaoyimadangxian",
+      "rank": 2,
+      "top1": "张辽姨妈当先"
+    },
+    {
+      "gold": "总是心急求快",
+      "id": "h-0111",
+      "input": "zongshixinjiqiukuai",
+      "rank": null,
+      "top1": "总是新击球快"
+    },
+    {
+      "gold": "情侣进展神速",
+      "id": "h-0112",
+      "input": "qinglvjinzhanshensu",
+      "rank": 125,
+      "top1": "情侣进展申诉"
+    }
+  ],
+  "top1_source": {
+    "database": 1,
+    "generated": 1104
+  }
+}

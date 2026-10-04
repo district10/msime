@@ -1,0 +1,341 @@
+{
+  "by_syllables": {
+    "2": {
+      "cases": 1860,
+      "found": 0.997,
+      "mrr": 0.792,
+      "top1": 0.696,
+      "top1_char_prefix": 0.745,
+      "top5": 0.925,
+      "top9": 0.967
+    },
+    "3": {
+      "cases": 365,
+      "found": 0.992,
+      "mrr": 0.944,
+      "top1": 0.926,
+      "top1_char_prefix": 0.963,
+      "top5": 0.978,
+      "top9": 0.989
+    },
+    "4": {
+      "cases": 556,
+      "found": 0.964,
+      "mrr": 0.88,
+      "top1": 0.853,
+      "top1_char_prefix": 0.904,
+      "top5": 0.962,
+      "top9": 0.964
+    },
+    "5": {
+      "cases": 10,
+      "found": 0.7,
+      "mrr": 0.385,
+      "top1": 0.3,
+      "top1_char_prefix": 0.6,
+      "top5": 0.7,
+      "top9": 0.7
+    }
+  },
+  "by_tag": {},
+  "cases": 2791,
+  "gold_source": {
+    "database": 2754,
+    "generated": 5
+  },
+  "overall": {
+    "cases": 2791,
+    "found": 0.989,
+    "mrr": 0.828,
+    "top1": 0.756,
+    "top1_char_prefix": 0.804,
+    "top5": 0.938,
+    "top9": 0.968
+  },
+  "sample_failures": [
+    {
+      "gold": "阿爸",
+      "id": "w-00001",
+      "input": "aba",
+      "rank": 5,
+      "top1": "阿巴阿巴"
+    },
+    {
+      "gold": "爱惜",
+      "id": "w-00037",
+      "input": "aixi",
+      "rank": 4,
+      "top1": "爱惜人才"
+    },
+    {
+      "gold": "按理",
+      "id": "w-00100",
+      "input": "anli",
+      "rank": 8,
+      "top1": "案例"
+    },
+    {
+      "gold": "摆渡",
+      "id": "w-00217",
+      "input": "baidu",
+      "rank": 4,
+      "top1": "百度"
+    },
+    {
+      "gold": "败露",
+      "id": "w-00244",
+      "input": "bailu",
+      "rank": 3,
+      "top1": "白鹭"
+    },
+    {
+      "gold": "搬走",
+      "id": "w-00388",
+      "input": "banzou",
+      "rank": 2,
+      "top1": "伴奏"
+    },
+    {
+      "gold": "胞弟",
+      "id": "w-00424",
+      "input": "baodi",
+      "rank": 4,
+      "top1": "宝地"
+    },
+    {
+      "gold": "保护国",
+      "id": "w-00460",
+      "input": "baohuguo",
+      "rank": 5,
+      "top1": "保护国家"
+    },
+    {
+      "gold": "褒义",
+      "id": "w-00550",
+      "input": "baoyi",
+      "rank": 4,
+      "top1": "保一方平安"
+    },
+    {
+      "gold": "保质",
+      "id": "w-00568",
+      "input": "baozhi",
+      "rank": 5,
+      "top1": "报纸"
+    },
+    {
+      "gold": "把守",
+      "id": "w-00586",
+      "input": "bashou",
+      "rank": 2,
+      "top1": "把手"
+    },
+    {
+      "gold": "备查",
+      "id": "w-00613",
+      "input": "beicha",
+      "rank": 12,
+      "top1": "被查"
+    },
+    {
+      "gold": "杯水车薪",
+      "id": "w-00676",
+      "input": "beishuichexi",
+      "rank": 4,
+      "top1": "被水车系"
+    },
+    {
+      "gold": "本市",
+      "id": "w-00739",
+      "input": "benshi",
+      "rank": 7,
+      "top1": "本事"
+    },
+    {
+      "gold": "彼岸",
+      "id": "w-00766",
+      "input": "bian",
+      "rank": 2,
+      "top1": "边"
+    },
+    {
+      "gold": "贬义",
+      "id": "w-00847",
+      "input": "bianyi",
+      "rank": 12,
+      "top1": "编译"
+    },
+    {
+      "gold": "壁画",
+      "id": "w-00964",
+      "input": "bihua",
+      "rank": 5,
+      "top1": "比画"
+    },
+    {
+      "gold": "冰柜",
+      "id": "w-01036",
+      "input": "binggui",
+      "rank": 4,
+      "top1": "并规定"
+    },
+    {
+      "gold": "兵力",
+      "id": "w-01045",
+      "input": "bingli",
+      "rank": 2,
+      "top1": "病例"
+    },
+    {
+      "gold": "病员",
+      "id": "w-01090",
+      "input": "bingyuan",
+      "rank": 5,
+      "top1": "病原体"
+    },
+    {
+      "gold": "必需",
+      "id": "w-01135",
+      "input": "bixu",
+      "rank": 4,
+      "top1": "必须"
+    },
+    {
+      "gold": "笔直",
+      "id": "w-01162",
+      "input": "bizhi",
+      "rank": 2,
+      "top1": "壁纸"
+    },
+    {
+      "gold": "部队",
+      "id": "w-01288",
+      "input": "budui",
+      "rank": 2,
+      "top1": "不对"
+    },
+    {
+      "gold": "不和",
+      "id": "w-01333",
+      "input": "buhe",
+      "rank": 6,
+      "top1": "不合适"
+    },
+    {
+      "gold": "补缺",
+      "id": "w-01477",
+      "input": "buque",
+      "rank": 7,
+      "top1": "不确定的"
+    },
+    {
+      "gold": "哺乳",
+      "id": "w-01486",
+      "input": "buru",
+      "rank": 3,
+      "top1": "不如"
+    },
+    {
+      "gold": "不适",
+      "id": "w-01504",
+      "input": "bushi",
+      "rank": 2,
+      "top1": "不是"
+    },
+    {
+      "gold": "不同见解",
+      "id": "w-01531",
+      "input": "butongjianji",
+      "rank": 4,
+      "top1": "不同剪辑"
+    },
+    {
+      "gold": "不外",
+      "id": "w-01540",
+      "input": "buwai",
+      "rank": 4,
+      "top1": "不外乎是"
+    },
+    {
+      "gold": "不问",
+      "id": "w-01549",
+      "input": "buwen",
+      "rank": 2,
+      "top1": "不稳定"
+    },
+    {
+      "gold": "补写",
+      "id": "w-01567",
+      "input": "buxie",
+      "rank": 13,
+      "top1": "不屑"
+    },
+    {
+      "gold": "不许",
+      "id": "w-01576",
+      "input": "buxu",
+      "rank": 3,
+      "top1": "不需要"
+    },
+    {
+      "gold": "不已",
+      "id": "w-01594",
+      "input": "buyi",
+      "rank": 5,
+      "top1": "不宜"
+    },
+    {
+      "gold": "不只",
+      "id": "w-01639",
+      "input": "buzhi",
+      "rank": 9,
+      "top1": "不知道"
+    },
+    {
+      "gold": "部族",
+      "id": "w-01666",
+      "input": "buzu",
+      "rank": 16,
+      "top1": "不足"
+    },
+    {
+      "gold": "才干",
+      "id": "w-01684",
+      "input": "caigan",
+      "rank": 2,
+      "top1": "才敢"
+    },
+    {
+      "gold": "财政补贴",
+      "id": "w-01756",
+      "input": "caizhengbuti",
+      "rank": 4,
+      "top1": "财政部体"
+    },
+    {
+      "gold": "才智",
+      "id": "w-01765",
+      "input": "caizhi",
+      "rank": 4,
+      "top1": "材质"
+    },
+    {
+      "gold": "苍劲",
+      "id": "w-01783",
+      "input": "cangjing",
+      "rank": 2,
+      "top1": "藏经"
+    },
+    {
+      "gold": "残疾",
+      "id": "w-01801",
+      "input": "canji",
+      "rank": 3,
+      "top1": "残疾人"
+    }
+  ],
+  "top1_source": {
+    "database": 2717,
+    "generated": 74
+  }
+}
