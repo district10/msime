@@ -3,6 +3,9 @@
 #import <Carbon/Carbon.h>
 #import <CoreGraphics/CoreGraphics.h>
 #include <algorithm>
+#include <map>
+#include <string>
+#include <utility>
 #include <vector>
 #include "ScreenKeyboardTargetPolicy.h"
 
@@ -53,6 +56,27 @@ const std::vector<std::vector<Key>> &Rows() {
     return rows;
 }
 bool Letter(const Key &key) { return key.normal[0] >= 'a' && key.normal[0] <= 'z' && key.normal[1] == '\0'; }
+
+// The characters the configured keyboard layout puts on these keys, by physical
+// key code. Empty when no layout is configured, and the table's own legends are
+// what a QWERTY keyboard shows. The panel posts physical key codes, so a key's
+// face has to be what the layout makes that press produce - otherwise clicking a
+// key labelled `q` types whatever the layout put there instead.
+std::map<unsigned short, std::pair<std::string, std::string>> &LayoutFaces() {
+    static std::map<unsigned short, std::pair<std::string, std::string>> faces;
+    return faces;
+}
+
+// The face for one key: the layout's characters when it claims the key, and the
+// table's own legend otherwise.
+NSString *KeyFace(const Key &key, bool shifted) {
+    const auto found = LayoutFaces().find(key.code);
+    if (found != LayoutFaces().end()) {
+        const std::string &face = shifted ? found->second.second : found->second.first;
+        if (!face.empty()) return @(face.c_str());
+    }
+    return @(shifted && key.shifted[0] ? key.shifted : key.normal);
+}
 bool CommitKey(const Key &key) {
     return (key.normal[0] >= '0' && key.normal[0] <= '9' && key.normal[1] == '\0') ||
         key.code == kVK_Space || key.code == kVK_Return || key.code == kVK_Tab ||
@@ -222,11 +246,12 @@ BOOL PostKey(unsigned short code, NSEventModifierFlags flags, pid_t targetPID) {
     close.autoresizingMask = NSViewMinXMargin;
     [content addSubview:close];
     for (const auto &row : Rows()) for (const Key &key : row) {
-        NSButton *button = [MSIMEScreenKeyboardButton buttonWithTitle:@(key.normal) target:self action:@selector(pressKey:)];
+        NSString *face = KeyFace(key, false);
+        NSButton *button = [MSIMEScreenKeyboardButton buttonWithTitle:face target:self action:@selector(pressKey:)];
         button.tag = _keys.size();
         button.accessibilityIdentifier = [NSString stringWithFormat:@"MSIMEScreenKeyboardKey%ld", (long)button.tag];
-        button.accessibilityLabel = @(key.normal);
-        button.font = [NSFont systemFontOfSize:key.normal[1] == '\0' ? 15 : 12];
+        button.accessibilityLabel = face;
+        button.font = [NSFont systemFontOfSize:face.length > 1 ? 12 : 15];
         button.bezelStyle = NSBezelStyleRegularSquare;
         button.buttonType = NSButtonTypePushOnPushOff;
         // Use AppKit's native press-and-hold tracking so character, editing and
@@ -244,6 +269,22 @@ BOOL PostKey(unsigned short code, NSEventModifierFlags flags, pid_t targetPID) {
     return self;
 }
 - (BOOL)canBecomeKeyWindow { return NO; }
+- (void)applyKeyboardLabels:(NSDictionary<NSNumber *, NSArray<NSString *> *> *)labels {
+    LayoutFaces().clear();
+    for (NSNumber *code in labels) {
+        NSArray<NSString *> *pair = labels[code];
+        if (![code isKindOfClass:NSNumber.class] || pair.count != 2) continue;
+        if (![pair[0] isKindOfClass:NSString.class] || ![pair[1] isKindOfClass:NSString.class]) continue;
+        LayoutFaces()[code.unsignedShortValue] = {pair[0].UTF8String, pair[1].UTF8String};
+    }
+    for (NSUInteger index = 0; index < _keys.size(); ++index) {
+        NSString *face = KeyFace(_keys[index], false);
+        _buttons[index].accessibilityLabel = face;
+        _buttons[index].font = [NSFont systemFontOfSize:face.length > 1 ? 12 : 15];
+    }
+    [self refreshKeys];
+}
+
 - (void)applyThemePreferences:(NSDictionary *)preferences {
     id surface = preferences[@"screen_keyboard_theme"];
     id global = preferences[@"theme"];
@@ -276,7 +317,7 @@ BOOL PostKey(unsigned short code, NSEventModifierFlags flags, pid_t targetPID) {
         const Key &key = _keys[index];
         // Upstream Caps affects posting, while the key face only reflects Shift.
         const bool shifted = shift && key.normal[1] == '\0';
-        _buttons[index].title = @(shifted && key.shifted[0] ? key.shifted : key.normal);
+        _buttons[index].title = KeyFace(key, shifted);
         _buttons[index].state = key.modifier && (_modifiers & key.modifier) ? NSControlStateValueOn : NSControlStateValueOff;
     }
 }

@@ -12,4 +12,10 @@ typedef pid_t (^MSIMEScreenKeyboardTargetProvider)(void);
                     targetProvider:(MSIMEScreenKeyboardTargetProvider)targetProvider;
 - (void)showKeyboard;
 - (void)applyThemePreferences:(NSDictionary *)preferences;
+/// The characters the configured keyboard layout puts on the physical keys, by
+/// NSNumber key code to a pair of (unshifted, shifted) strings. An empty
+/// dictionary restores the table's own QWERTY legends, which is what a host with
+/// no layout configured shows. The panel posts physical key codes, so without
+/// this its faces would name keys the layout no longer types.
+- (void)applyKeyboardLabels:(NSDictionary<NSNumber *, NSArray<NSString *> *> *)labels;
 @end

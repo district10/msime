@@ -64,6 +64,17 @@ int main() {
         [panel applyThemePreferences:@{@"theme": @"system", @"screen_keyboard_theme": @"follow"}];
         assert(panel.appearance == nil && !panel.visible);
         assert((panel.styleMask & NSWindowStyleMaskNonactivatingPanel) != 0);
+        // The faces follow the configured keyboard layout: a key the layout moves
+        // shows what it types now, a key the layout does not claim keeps its own
+        // legend, and clearing the map puts every legend back. Index 15 is the
+        // physical Q, index 38 the physical semicolon (see the code list below).
+        [panel applyKeyboardLabels:@{@(kVK_ANSI_Q): @[@"'", @"\""], @(kVK_ANSI_Semicolon): @[@"n", @"N"]}];
+        assert([Key(panel, 15).title isEqualToString:@"'"]);
+        assert([Key(panel, 38).title isEqualToString:@"n"]);
+        assert([Key(panel, 14).title isEqualToString:@"Tab"]);
+        [panel applyKeyboardLabels:@{}];
+        assert([Key(panel, 15).title isEqualToString:@"q"]);
+        assert([Key(panel, 38).title isEqualToString:@";"]);
         const std::vector<unsigned short> codes = {
             50,18,19,20,21,23,22,26,28,25,29,27,24,51,
             48,12,13,14,15,17,16,32,34,31,35,33,30,42,

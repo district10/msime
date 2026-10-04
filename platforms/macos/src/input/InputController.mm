@@ -3379,7 +3379,10 @@ static __weak MSIMEInputController *MSIMEFocusedController;
 }
 - (void)showScreenKeyboard:(id)sender {
     (void)sender;
-    MSIMEOpenDesktopRoute(@"keyboard", NSWorkspace.sharedWorkspace, ^{ [[MSIMEScreenKeyboardPanel sharedPanel] showKeyboard]; });
+    MSIMEOpenDesktopRoute(@"keyboard", NSWorkspace.sharedWorkspace, ^{
+        [[MSIMEScreenKeyboardPanel sharedPanel] applyKeyboardLabels:[self physicalKeyboardKeyFaces]];
+        [[MSIMEScreenKeyboardPanel sharedPanel] showKeyboard];
+    });
 }
 - (void)setEnglishInputMode:(BOOL)enabled {
     [self ensureAppearance];
@@ -5058,6 +5061,17 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     [panel presentEffect:packed commit:commit caretRect:caret candidateView:card cardRect:cardRect cornerRadius:card.cornerRadius];
 }
 
+// The character a physical key gets under the configured layout, as the screen
+// keyboard draws it. Empty when the layout does not claim the key.
+static NSString *MSIMEPhysicalKeyboardFace(const msime::mac::PhysicalKeyboardRows &rows,
+                                           const msime::mac::PhysicalKeyboardInputSource &source,
+                                           unsigned short keyCode, bool shift) {
+    const char character = source.ready() ? source.character(keyCode, shift)
+                                          : msime::mac::PhysicalKeyboardRowCharacter(rows, keyCode, shift);
+    if (character == '\0') return @"";
+    return [NSString stringWithFormat:@"%c", character];
+}
+
 // One row of a configured keyboard layout, as a C++ string. Anything that is not
 // a string reads as an empty row, which leaves its keys to the platform.
 static std::string MSIMELayoutRowText(id value) {
@@ -5096,6 +5110,9 @@ static std::string MSIMELayoutRowText(id value) {
         _physicalKeyboardRows = layout;
         _physicalKeyboardMapped = msime::mac::PhysicalKeyboardRowsFit(_physicalKeyboardRows);
     }
+    // An open screen keyboard redraws immediately; a closed one picks this up when
+    // it is next shown.
+    [[MSIMEScreenKeyboardPanel sharedPanel] applyKeyboardLabels:[self physicalKeyboardKeyFaces]];
     if (_physicalKeyboardMapped) msime_macos_diagnostic_write("physical_keyboard_applied");
 }
 
@@ -5110,6 +5127,33 @@ static std::string MSIMELayoutRowText(id value) {
 // exactly as each call site did before. Command, Control and Option belong to the
 // application rather than to the layout: a shortcut keeps the platform's
 // translation, because a layout describes typing and not chords.
+// What the configured keyboard layout puts on each physical letter key, for the
+// screen keyboard's faces. Empty when no layout is configured, and the panel then
+// draws its own QWERTY legends - which is also what a host that translates
+// nothing should show, because the platform's characters are those legends.
+- (NSDictionary<NSNumber *, NSArray<NSString *> *> *)physicalKeyboardKeyFaces {
+    if (!_physicalKeyboardMapped) return @{};
+    const std::array<const unsigned short *, 4> rows{msime::mac::PhysicalKeyboardTopKeys.data(),
+                                                     msime::mac::PhysicalKeyboardHomeKeys.data(),
+                                                     msime::mac::PhysicalKeyboardBottomKeys.data(),
+                                                     msime::mac::PhysicalKeyboardPunctKeys.data()};
+    const std::array<size_t, 4> counts{msime::mac::PhysicalKeyboardTopKeys.size(),
+                                       msime::mac::PhysicalKeyboardHomeKeys.size(),
+                                       msime::mac::PhysicalKeyboardBottomKeys.size(),
+                                       msime::mac::PhysicalKeyboardPunctKeys.size()};
+    NSMutableDictionary *faces = [NSMutableDictionary dictionary];
+    for (size_t row = 0; row < rows.size(); ++row) {
+        for (size_t index = 0; index < counts[row]; ++index) {
+            const unsigned short code = rows[row][index];
+            NSString *plain = MSIMEPhysicalKeyboardFace(_physicalKeyboardRows, _physicalKeyboardSource, code, false);
+            NSString *shifted = MSIMEPhysicalKeyboardFace(_physicalKeyboardRows, _physicalKeyboardSource, code, true);
+            if (!plain.length && !shifted.length) continue;
+            faces[@(code)] = @[plain, shifted];
+        }
+    }
+    return faces;
+}
+
 - (NSString *)typedCharactersForEvent:(NSEvent *)event ignoringModifiers:(BOOL)ignoringModifiers {
     NSString *translated = ignoringModifiers ? event.charactersIgnoringModifiers : event.characters;
     if (!_physicalKeyboardMapped || translated.length != 1) return translated;
