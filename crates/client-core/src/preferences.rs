@@ -532,6 +532,168 @@ pub enum CharacterWidthPreference {
     Fullwidth,
 }
 
+/// How a desktop host reads a physical key press before handing the character to
+/// the Engine. `system` is the platform's own translation, and is what every host
+/// did before this existed, so it stays the default and a document that never
+/// mentions the field reads exactly as it did.
+///
+/// The other two exist because a keyboard layout and the system's *selected*
+/// layout are not the same thing. Switching the system layout is global - every
+/// application changes with it - so a user who types on a private layout, or
+/// alternates between several, has no way to have one apply to the input method
+/// alone. These two let the host read the physical keys through a named layout
+/// while the rest of the desktop keeps the layout the user selected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum PhysicalKeyboardMode {
+    #[default]
+    System,
+    /// Translate through another installed keyboard layout's own data, named by
+    /// `input_source`. This covers a layout the platform already knows: one it
+    /// ships, or a private one the user installed and never selected.
+    InputSource,
+    /// Translate through `rows`, which this document carries. For a layout the
+    /// machine does not have installed, and for a host with no layout catalogue
+    /// to name one from.
+    Mapping,
+}
+
+/// A layout written as the characters its keys produce, row by row.
+///
+/// The four rows are the letter block and the right-hand punctuation, in physical
+/// order: `top` is `Q W E R T Y U I O P`, `home` is `A S D F G H J K L`, `bottom`
+/// is `Z X C V B N M` and `punct` is `; ' , . /`. Each row is exactly as long as
+/// the keys it covers, and every other key - the digit row, the left-hand
+/// punctuation, the keypad, the extra keys a JIS keyboard has - is left to the
+/// platform. A key no row covers therefore degrades to the system's own character
+/// rather than to nothing.
+///
+/// Rows are written unshifted. A `shift_*` row gives the same keys with Shift
+/// held; empty means Shift only uppercases a letter and leaves every other key as
+/// its unshifted row has it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PhysicalKeyboardRows {
+    #[serde(default)]
+    pub top: String,
+    #[serde(default)]
+    pub home: String,
+    #[serde(default)]
+    pub bottom: String,
+    #[serde(default)]
+    pub punct: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shift_top: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shift_home: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shift_bottom: String,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub shift_punct: String,
+}
+
+/// How long each row of [`PhysicalKeyboardRows`] is, in physical key order: top,
+/// home, bottom, punct. A host turns a key code into one of these positions, so
+/// this is the one place the row geometry is written down.
+pub const PHYSICAL_KEYBOARD_ROW_KEYS: [usize; 4] = [10, 9, 7, 5];
+
+/// How this host reads physical keys, and the layout it reads them through.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(deny_unknown_fields)]
+pub struct PhysicalKeyboardPreferences {
+    #[serde(default)]
+    pub mode: PhysicalKeyboardMode,
+    /// The platform's identifier for the layout, as `input_source` mode names it:
+    /// a macOS input source id such as `com.apple.keylayout.Dvorak`, or the
+    /// `org.unknown.keylayout.dvorak` a private Ukelele layout is given. Empty in
+    /// the other modes.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub input_source: String,
+    /// The layout itself, for `mapping` mode. Kept while another mode is selected,
+    /// so that switching away and back does not lose it.
+    #[serde(default, skip_serializing_if = "PhysicalKeyboardRows::is_empty")]
+    pub rows: PhysicalKeyboardRows,
+}
+
+impl PhysicalKeyboardRows {
+    /// Whether every row is empty, which is what a document that never configured
+    /// a layout carries.
+    pub fn is_empty(&self) -> bool {
+        self == &Self::default()
+    }
+}
+
+impl PhysicalKeyboardPreferences {
+    /// Whether this is the default: the platform translates, as it always did.
+    pub fn is_default(&self) -> bool {
+        self == &Self::default()
+    }
+
+    /// Whether a row is usable for a run of `keys` keys: either absent, or exactly
+    /// that long and made of printable ASCII. A space is deliberately not allowed
+    /// - it is the one character a host cannot tell from "no character", so a
+    /// layout that wants one on a key keeps the platform's own.
+    fn row_fits(row: &str, keys: usize) -> bool {
+        row.is_empty()
+            || (row.is_ascii()
+                && row.len() == keys
+                && row.bytes().all(|byte| (0x21..=0x7e).contains(&byte)))
+    }
+
+    fn validate(&self) -> Result<(), PreferencesError> {
+        for (plain, shifted, keys) in [
+            (
+                &self.rows.top,
+                &self.rows.shift_top,
+                PHYSICAL_KEYBOARD_ROW_KEYS[0],
+            ),
+            (
+                &self.rows.home,
+                &self.rows.shift_home,
+                PHYSICAL_KEYBOARD_ROW_KEYS[1],
+            ),
+            (
+                &self.rows.bottom,
+                &self.rows.shift_bottom,
+                PHYSICAL_KEYBOARD_ROW_KEYS[2],
+            ),
+            (
+                &self.rows.punct,
+                &self.rows.shift_punct,
+                PHYSICAL_KEYBOARD_ROW_KEYS[3],
+            ),
+        ] {
+            // A shifted row describes keys its unshifted row has to name first. The
+            // other direction is ordinary: most layouts shift nothing but letters.
+            if !Self::row_fits(plain, keys)
+                || !Self::row_fits(shifted, keys)
+                || (!shifted.is_empty() && plain.is_empty())
+            {
+                return Err(PreferencesError::InvalidPhysicalKeyboardRows);
+            }
+        }
+        if !self.input_source.is_empty()
+            && (self.input_source.len() > 256
+                || !crate::text::is_ascii_identifier_with_dots(&self.input_source))
+        {
+            return Err(PreferencesError::InvalidPhysicalKeyboardInputSource);
+        }
+        // A mode is only as good as the value it names: selecting one without the
+        // data it reads would quietly type on the system layout instead.
+        match self.mode {
+            PhysicalKeyboardMode::System => {}
+            PhysicalKeyboardMode::InputSource if self.input_source.is_empty() => {
+                return Err(PreferencesError::InvalidPhysicalKeyboardInputSource);
+            }
+            PhysicalKeyboardMode::Mapping if self.rows.top.is_empty() => {
+                return Err(PreferencesError::InvalidPhysicalKeyboardRows);
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+}
+
 /// Candidate sentence-association sources. The dictionary lattice keeps its historical default; neural rerankers are opt-in because they add model work while typing or settling.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -672,6 +834,14 @@ pub struct Preferences {
     /// when their native candidate presenter does not expose the switch.
     #[serde(default = "enabled_by_default")]
     pub number_row_selection: bool,
+    /// How this host reads physical key presses, and the layout it reads them
+    /// through. Desktop hosts only: a touch keyboard has no physical keys, so
+    /// they preserve this without acting on it.
+    #[serde(
+        default,
+        skip_serializing_if = "PhysicalKeyboardPreferences::is_default"
+    )]
+    pub physical_keyboard: PhysicalKeyboardPreferences,
     #[serde(default = "default_candidate_font_size")]
     pub candidate_font_size: u8,
     #[serde(default = "default_candidate_preedit_font_size")]
@@ -1690,6 +1860,7 @@ impl Default for Preferences {
             vietnamese: VietnamesePreferences::default(),
             candidate_page_size: 6,
             number_row_selection: true,
+            physical_keyboard: PhysicalKeyboardPreferences::default(),
             candidate_font_size: default_candidate_font_size(),
             candidate_preedit_font_size: default_candidate_preedit_font_size(),
             candidate_scale_percent: default_candidate_scale_percent(),
@@ -2107,6 +2278,7 @@ impl Preferences {
         if !(1..=9).contains(&self.candidate_page_size) {
             return Err(PreferencesError::InvalidPageSize);
         }
+        self.physical_keyboard.validate()?;
         if !(30..=60).contains(&self.touch_key_spacing_tenths)
             || !(40..=100).contains(&self.touch_row_spacing_tenths)
             || !(-12..=48).contains(&self.touch_keyboard_height_adjustment)
@@ -2202,6 +2374,12 @@ pub enum PreferencesError {
     InvalidNiuTrans,
     #[error("candidate page size must be between 1 and 9")]
     InvalidPageSize,
+    /// The rows are `10 9 7 5` printable ASCII characters, top to punct, and a
+    /// shifted row is only written beside the row it shifts.
+    #[error("physical keyboard rows must be 10, 9, 7 and 5 printable ASCII characters, each shifted row beside its own row")]
+    InvalidPhysicalKeyboardRows,
+    #[error("physical keyboard input source must be a non-empty input source identifier")]
+    InvalidPhysicalKeyboardInputSource,
     #[error("touch keyboard key spacing must be 3.0-6.0 and row spacing must be 4.0-10.0")]
     InvalidTouchKeyboardSpacing,
     #[error(

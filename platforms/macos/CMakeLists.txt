@@ -791,6 +791,16 @@ target_link_libraries(smart-punctuation-shadow-test PRIVATE ${MSIME_CONTROLLER_T
 target_compile_options(smart-punctuation-shadow-test PRIVATE -fobjc-arc -Wall -Wextra -Werror -UNDEBUG "-F${MSIME_SPARKLE_ROOT}")
 add_test(NAME smart-punctuation-shadow COMMAND smart-punctuation-shadow-test)
 set_tests_properties(smart-punctuation-shadow PROPERTIES TIMEOUT 30)
+# What a physical key is read as once a keyboard layout is configured: the rows on
+# the real controller, so the wiring between the preference and the typing path is
+# what is under test rather than the translation alone.
+add_executable(physical-keyboard-input-test tests/input/PhysicalKeyboardInputTest.mm ${MSIME_CONTROLLER_TEST_SOURCES}
+  src/cloud/TranslationCache.mm src/cloud/TranslationSettingsWindow.mm src/core/AISettingsWindow.mm
+  src/input/InputModeHUDPanel.mm)
+target_link_libraries(physical-keyboard-input-test PRIVATE ${MSIME_CONTROLLER_TEST_LIBS})
+target_compile_options(physical-keyboard-input-test PRIVATE -fobjc-arc -Wall -Wextra -Werror -UNDEBUG "-F${MSIME_SPARKLE_ROOT}")
+add_test(NAME physical-keyboard-input COMMAND physical-keyboard-input-test)
+set_tests_properties(physical-keyboard-input PROPERTIES TIMEOUT 30)
 # Dictionary maintenance from the settings window: real sessions let go of the dictionary lock under a live quiesce lease and come back, mode intact, once it is gone.
 add_executable(dictionary-quiesce-controller-test tests/input/DictionaryQuiesceTest.mm ${MSIME_CONTROLLER_TEST_SOURCES}
   src/cloud/TranslationCache.mm src/cloud/TranslationSettingsWindow.mm src/core/AISettingsWindow.mm
@@ -1025,6 +1035,14 @@ add_executable(input-scheme-traits-test tests/input/InputSchemeTraitsTest.cpp)
 target_compile_features(input-scheme-traits-test PRIVATE cxx_std_17)
 target_compile_options(input-scheme-traits-test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
 add_test(NAME input-scheme-traits COMMAND input-scheme-traits-test)
+
+# The layout a document carries and the data of an installed input source are two
+# ways of naming one layout, so the test reads both: it needs Carbon for TIS.
+add_executable(physical-keyboard-layout-test tests/input/PhysicalKeyboardLayoutTest.cpp)
+target_compile_features(physical-keyboard-layout-test PRIVATE cxx_std_17)
+target_compile_options(physical-keyboard-layout-test PRIVATE -Wall -Wextra -Werror -UNDEBUG)
+target_link_libraries(physical-keyboard-layout-test PRIVATE "-framework Carbon" "-framework Foundation")
+add_test(NAME physical-keyboard-layout COMMAND physical-keyboard-layout-test)
 
 add_executable(candidate-font-cache-test tests/candidate/CandidateFontCacheTest.mm src/candidate/CandidateFontCache.mm)
 target_compile_options(candidate-font-cache-test PRIVATE -fobjc-arc -Wall -Wextra -Werror -UNDEBUG)

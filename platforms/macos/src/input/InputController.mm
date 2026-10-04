@@ -47,6 +47,7 @@
 #import "../core/ChineseTextConversion.h"
 #include "../core/FullWidthInput.h"
 #include "InputControllerPhysicalKeys.h"
+#include "PhysicalKeyboardLayout.h"
 #include "InputSchemeTraits.h"
 #include "../core/ModifierTap.h"
 #import "../settings/ShuangpinKeymapPanel.h"
@@ -715,13 +716,13 @@ static BOOL MSIMECandidateListDownKey(NSEvent *event, NSDictionary *view) {
 // must remain a native application key when a new composition would otherwise
 // start. Once a composition or candidate list exists, the same key belongs to
 // Engine and must not be bypassed.
-static BOOL MSIMECapsLockFreshUppercaseBypass(NSEvent *event, NSDictionary *view) {
+static BOOL MSIMECapsLockFreshUppercaseBypass(NSEvent *event, NSString *characters, NSDictionary *view) {
     if (!event || event.type != NSEventTypeKeyDown) return NO;
     const NSEventModifierFlags competing = NSEventModifierFlagShift | NSEventModifierFlagControl |
                                            NSEventModifierFlagOption | NSEventModifierFlagCommand;
     if (!(event.modifierFlags & NSEventModifierFlagCapsLock) || (event.modifierFlags & competing)) return NO;
-    if (event.characters.length != 1) return NO;
-    const unichar character = [event.characters characterAtIndex:0];
+    if (characters.length != 1) return NO;
+    const unichar character = [characters characterAtIndex:0];
     if (character < 'A' || character > 'Z') return NO;
     NSString *editing = [view[@"editing_text"] isKindOfClass:NSString.class] ? view[@"editing_text"] : @"";
     NSArray *candidates = [view[@"candidates"] isKindOfClass:NSArray.class] ? view[@"candidates"] : @[];
@@ -1034,6 +1035,14 @@ static NSImage *MSIMECandidateLogoImage() {
     NSTimeInterval _spaceRevertTime;
     __weak id _spaceRevertClient;
     msime::mac::PairedPunctuationTracker _pairedPunctuation;
+    // The layout this host reads physical keys through, when the user asked for one
+    // rather than the system's. `_physicalKeyboardRows` is a layout configured in
+    // this document, `_physicalKeyboardSource` one installed on the machine; with
+    // both inert the platform translates, which is the default and what every key
+    // did before this existed. Rebuilt by -syncPhysicalKeyboard, never per key.
+    msime::mac::PhysicalKeyboardRows _physicalKeyboardRows;
+    msime::mac::PhysicalKeyboardInputSource _physicalKeyboardSource;
+    BOOL _physicalKeyboardMapped;
     // Key heatmap counts not yet written, and the timer that writes them if typing stops before a batch fills.
     msime::mac::KeyPressBatch _keyPressBatch;
     NSTimer *_keyPressFlushTimer;
@@ -1170,7 +1179,7 @@ static NSImage *MSIMECandidateLogoImage() {
     default:
         break;
     }
-    NSString *characters = event.characters;
+    NSString *characters = [self typedCharactersForEvent:event ignoringModifiers:NO];
     const unichar character = characters.length == 1 ? [characters characterAtIndex:0] : 0;
     if ((event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand)) ||
         character < 0x20 || character == 0x7F || (character >= 0xF700 && character <= 0xF8FF)) {
@@ -1241,7 +1250,8 @@ static NSImage *MSIMECandidateLogoImage() {
 // A space right after a Chinese mark the user did not want takes the mark back to ASCII. It is the mirror of repeat-to-Chinese and shares its caution: the preceding character is read back and has to still be the mark that was committed, in the same client, with nothing composing - otherwise a character the user already saw land would be rewritten out from under them. A host that reads back nothing at all (a terminal) is taken on the shadow's word instead and rewritten with posted events, as the reference does when its document read returns nothing.
 - (BOOL)convertSmartPunctuationSpace:(NSEvent *)event client:(id<MSIMETextClient>)client {
     if (!_spaceConvertMark) return NO;
-    if (event.characters.length != 1 || [event.characters characterAtIndex:0] != ' ' ||
+    NSString *typedCharacters = [self typedCharactersForEvent:event ignoringModifiers:NO];
+    if (typedCharacters.length != 1 || [typedCharacters characterAtIndex:0] != ' ' ||
         (event.modifierFlags & (NSEventModifierFlagShift | NSEventModifierFlagControl | NSEventModifierFlagOption |
                                 NSEventModifierFlagCommand))) {
         [self clearSmartPunctuationSpaceConversion];
@@ -1295,7 +1305,8 @@ static NSImage *MSIMECandidateLogoImage() {
     const NSTimeInterval armedAt = _spaceRevertTime;
     id armed = _spaceRevertClient;
     [self clearSmartPunctuationSpaceRevert];
-    if (event.characters.length != 1 || [event.characters characterAtIndex:0] != key ||
+    NSString *typedCharacters = [self typedCharactersForEvent:event ignoringModifiers:NO];
+    if (typedCharacters.length != 1 || [typedCharacters characterAtIndex:0] != key ||
         (event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand)))
         return NO;
     if (!_appearance.smartPunctuation || !_appearance.smartPunctuationRepeatToChinese ||
@@ -1319,10 +1330,11 @@ static NSImage *MSIMECandidateLogoImage() {
 }
 
 - (BOOL)handleSmartPunctuation:(NSEvent *)event client:(id<MSIMETextClient>)client {
-    if (event.characters.length != 1 ||
+    NSString *typedCharacters = [self typedCharactersForEvent:event ignoringModifiers:NO];
+    if (typedCharacters.length != 1 ||
         (event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand)))
         return NO;
-    const unichar character = [event.characters characterAtIndex:0];
+    const unichar character = [typedCharacters characterAtIndex:0];
     if (!MSIMESmartPunctuationSpaceKey(character)) return NO;
     // Korean and Vietnamese marks are ASCII already, and the repeat gesture that would turn them Chinese never arms there: the key goes to the Engine, which writes the mark after the open composition or leaves it to the application. Zhuyin's marks are bopomofo keys or its Shift overlay, which the Engine writes in any state, so the contextual ASCII route below never takes them either.
     if (![self schemeUsesChinesePunctuation] || MSIMEViewScheme(_view) == msime::mac::scheme::Zhuyin) {
@@ -4525,6 +4537,7 @@ static BOOL MSIMEClaimPreferenceRecovery(NSString *directory) {
     if (!_preferenceLoadState.needsApply(revision)) return;
     _preferenceLoadState.applied(revision);
     NSDictionary *preferences = snapshot[@"preferences"];
+    [self syncPhysicalKeyboardFromPreferences:preferences];
     NSMutableDictionary *inputPreferences = [preferences isKindOfClass:NSDictionary.class] ? [preferences mutableCopy] : nil;
     id inlinePreedit = inputPreferences[@"tsf_preedit_style"];
     if (![inlinePreedit isKindOfClass:NSString.class] ||
@@ -4876,7 +4889,7 @@ static BOOL MSIMEClaimPreferenceRecovery(NSString *directory) {
     if (![wordCharacter[@"enabled"] boolValue]) return NO;
     // A scheme whose letters build the written text directly (a Korean syllable or Hanja, a Vietnamese word) has no word to take a character from: the pair is punctuation there (see candidateListMark in handleEvent:client:).
     if (MSIMESchemeTrait(_view, msime::mac::scheme::LetterComposition)) return NO;
-    NSString *characters = event.charactersIgnoringModifiers;
+    NSString *characters = [self typedCharactersForEvent:event ignoringModifiers:YES];
     if (characters.length != 1) return NO;
     const unichar character = [characters characterAtIndex:0];
     // A key the Engine spells with, such as expression mode's '-', is input rather than an edge pick.
@@ -5007,6 +5020,71 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     [panel presentEffect:packed commit:commit caretRect:caret candidateView:card cardRect:cardRect cornerRadius:card.cornerRadius];
 }
 
+// One row of a configured keyboard layout, as a C++ string. Anything that is not
+// a string reads as an empty row, which leaves its keys to the platform.
+static std::string MSIMELayoutRowText(id value) {
+    if (![value isKindOfClass:NSString.class]) return {};
+    const char *text = [value UTF8String];
+    return text ? std::string(text) : std::string();
+}
+
+// Rebuild the layout the typing path reads. Called when the preferences are
+// applied, never per keystroke: resolving an input source walks the installed
+// layout list and reads that layout's data. A layout that resolves to nothing
+// leaves typing exactly as it was, which is what a user sees for one they have
+// since uninstalled and for rows that did not validate.
+- (void)syncPhysicalKeyboardFromPreferences:(NSDictionary *)preferences {
+    _physicalKeyboardRows = msime::mac::PhysicalKeyboardRows{};
+    _physicalKeyboardSource.reset();
+    _physicalKeyboardMapped = NO;
+    NSDictionary *configuration = [preferences[@"physical_keyboard"] isKindOfClass:NSDictionary.class]
+        ? preferences[@"physical_keyboard"] : nil;
+    NSDictionary *rows = [configuration[@"rows"] isKindOfClass:NSDictionary.class] ? configuration[@"rows"] : nil;
+    NSString *mode = configuration[@"mode"];
+    if ([mode isEqual:@"input_source"]) {
+        NSString *identifier = [configuration[@"input_source"] isKindOfClass:NSString.class]
+            ? configuration[@"input_source"] : nil;
+        if (identifier.length) _physicalKeyboardMapped = _physicalKeyboardSource.use(identifier.UTF8String);
+    } else if ([mode isEqual:@"mapping"]) {
+        msime::mac::PhysicalKeyboardRows layout;
+        layout.top = MSIMELayoutRowText(rows[@"top"]);
+        layout.home = MSIMELayoutRowText(rows[@"home"]);
+        layout.bottom = MSIMELayoutRowText(rows[@"bottom"]);
+        layout.punct = MSIMELayoutRowText(rows[@"punct"]);
+        layout.shiftTop = MSIMELayoutRowText(rows[@"shift_top"]);
+        layout.shiftHome = MSIMELayoutRowText(rows[@"shift_home"]);
+        layout.shiftBottom = MSIMELayoutRowText(rows[@"shift_bottom"]);
+        layout.shiftPunct = MSIMELayoutRowText(rows[@"shift_punct"]);
+        _physicalKeyboardRows = layout;
+        _physicalKeyboardMapped = msime::mac::PhysicalKeyboardRowsFit(_physicalKeyboardRows);
+    }
+    if (_physicalKeyboardMapped) msime_macos_diagnostic_write("physical_keyboard_applied");
+}
+
+// The characters this key typed under the configured physical keyboard layout, or
+// the platform's own translation when no layout is configured or the layout does
+// not claim the key. Every site that asks "what does this key type" reads this, so
+// the punctuation route, the spelling-symbol exclusions, paired punctuation and
+// word-to-character cannot end up disagreeing with the character handed to the
+// Engine.
+//
+// `ignoringModifiers` picks which of AppKit's two translations to fall back to,
+// exactly as each call site did before. Command, Control and Option belong to the
+// application rather than to the layout: a shortcut keeps the platform's
+// translation, because a layout describes typing and not chords.
+- (NSString *)typedCharactersForEvent:(NSEvent *)event ignoringModifiers:(BOOL)ignoringModifiers {
+    NSString *translated = ignoringModifiers ? event.charactersIgnoringModifiers : event.characters;
+    if (!_physicalKeyboardMapped || translated.length != 1) return translated;
+    if (event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand))
+        return translated;
+    const BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
+    const char character = _physicalKeyboardSource.ready()
+        ? _physicalKeyboardSource.character(event.keyCode, shift)
+        : msime::mac::PhysicalKeyboardRowCharacter(_physicalKeyboardRows, event.keyCode, shift);
+    if (character == '\0') return translated;
+    return [NSString stringWithFormat:@"%c", character];
+}
+
 // Every key down leaves through here, so the smart punctuation shadow sees each one exactly once, after it has been handled and with what became of it. Events this host posted itself (the voice sendinput route and the smart punctuation rewrite) are skipped: whoever posted them has already recorded what they carry.
 - (BOOL)handleEvent:(NSEvent *)event client:(id)sender {
     const bool timed = msime_macos_diagnostic_enabled();
@@ -5053,7 +5131,7 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     if (IsSecureEventInputEnabled()) return;
     CGEventRef nativeEvent = event.CGEvent;
     if (nativeEvent && CGEventGetIntegerValueField(nativeEvent, kCGEventSourceUserData) == MSIMEVoiceCommitEventTag) return;
-    NSString *characters = event.characters;
+    NSString *characters = [self typedCharactersForEvent:event ignoringModifiers:NO];
     if (characters.length != 1) return;
     if (!msime::mac::ShouldCountPassthroughCharacter([characters characterAtIndex:0], (event.modifierFlags & NSEventModifierFlagControl) != 0, (event.modifierFlags & NSEventModifierFlagCommand) != 0)) return;
     const msime::mac::TypingSource source = _appearance.englishMode ? msime::mac::TypingSource::English : MSIMEResolveTypingSource(_view, _view, MSIMEStatisticsHostOptions(_session), NO);
@@ -5230,12 +5308,12 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
             // ownership; no Engine request or document edit is needed here.
             return YES;
         }
-    } else if (_smartPunctuationRejected && event.characters.length == 1 &&
-               [event.characters characterAtIndex:0] != _rejectedSmartPunctuation) {
+    } else if (_smartPunctuationRejected && [self typedCharactersForEvent:event ignoringModifiers:NO].length == 1 &&
+               [[self typedCharactersForEvent:event ignoringModifiers:NO] characterAtIndex:0] != _rejectedSmartPunctuation) {
         _smartPunctuationRejected = NO;
         _rejectedSmartPunctuation = 0;
-    } else if (_lastSmartPunctuation && event.characters.length == 1 &&
-               [event.characters characterAtIndex:0] != _lastSmartPunctuation) {
+    } else if (_lastSmartPunctuation && [self typedCharactersForEvent:event ignoringModifiers:NO].length == 1 &&
+               [[self typedCharactersForEvent:event ignoringModifiers:NO] characterAtIndex:0] != _lastSmartPunctuation) {
         [self resetSmartPunctuationState];
     }
     if (voiceEnabled && !event.isARepeat && event.keyCode == 101 &&
@@ -5318,11 +5396,12 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     if (_appearance.englishMode) {
         const NSEventModifierFlags competing = NSEventModifierFlagControl | NSEventModifierFlagOption |
                                                 NSEventModifierFlagCommand;
-        if (!(event.modifierFlags & competing) && event.characters.length == 1) {
+        NSString *typedCharacters = [self typedCharactersForEvent:event ignoringModifiers:NO];
+        if (!(event.modifierFlags & competing) && typedCharacters.length == 1) {
             const BOOL keypad = (event.modifierFlags & NSEventModifierFlagNumericPad) != 0 || event.keyCode == 65;
             const BOOL chinese = [_appearance.punctuationLock isEqual:@"chinese"] ||
                 ([_appearance.punctuationLock isEqual:@"follow"] && _appearance.runtimeChinesePunctuation);
-            const unichar character = [event.characters characterAtIndex:0];
+            const unichar character = [typedCharacters characterAtIndex:0];
             const std::string output = msime::input::english_mode_output(
                 character, keypad, chinese, _appearance.runtimeFullWidthInput, _englishPunctuation);
             if (!output.empty()) {
@@ -5337,7 +5416,8 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         return NO;
     }
     // Korean letters take their case from Shift alone (KoreanKeyLetter) and Vietnamese composes an uppercase letter as written, so Caps Lock does not hand them to the application either.
-    if (!MSIMESchemeTrait(_view, msime::mac::scheme::CapsLockBypassExempt) && MSIMECapsLockFreshUppercaseBypass(event, _view)) return NO;
+    if (!MSIMESchemeTrait(_view, msime::mac::scheme::CapsLockBypassExempt) &&
+        MSIMECapsLockFreshUppercaseBypass(event, [self typedCharactersForEvent:event ignoringModifiers:NO], _view)) return NO;
     if (!_session) [self prepareSession];
     if (!_session) return NO;
     if (_focusPending) [self prepareSession];
@@ -5383,7 +5463,7 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         msime::mac::ShouldRouteSpellingShiftCandidateDigit(
             _panel.isVisible, digitIsSpelling,
             (event.modifierFlags & candidateDigitModifiers) == NSEventModifierFlagShift,
-            MSIMESpellingSymbolString(_view, event.characters))) {
+            MSIMESpellingSymbolString(_view, [self typedCharactersForEvent:event ignoringModifiers:NO]))) {
         const int slot = msime::mac::PhysicalCandidateDigitSlot(event.keyCode);
         if (slot >= 0) {
             // The panel owns the rendered snapshot. If it is from an older
@@ -5520,7 +5600,7 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         [_view[@"scheme"] intValue], [_view[@"local_mode"] isEqual:@"temporary_japanese"],
         event.keyCode, 0);
     const BOOL engineInputKey = ([_view[@"local_mode"] isEqual:@"unicode"] &&
-        [event.charactersIgnoringModifiers isEqual:@"+"]) || MSIMESpellingSymbolString(_view, event.charactersIgnoringModifiers);
+        [[self typedCharactersForEvent:event ignoringModifiers:YES] isEqual:@"+"]) || MSIMESpellingSymbolString(_view, [self typedCharactersForEvent:event ignoringModifiers:YES]);
     // Word-to-character owns whichever pair it is bound to, and paging does not get to take it. The two are
     // alternatives, which applyCloudSettingsSnapshot: already says by refusing a snapshot whose paging
     // preset collides - but that only guards the cloud path, so a locally enabled bracket or minus paging
@@ -5549,7 +5629,7 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         }
     }
     if (_panel.isVisible && !(event.modifierFlags & NSEventModifierFlagShift)) {
-        NSString *characters = event.charactersIgnoringModifiers;
+        NSString *characters = [self typedCharactersForEvent:event ignoringModifiers:YES];
         if (characters.length == 1) {
             const unichar character = [characters characterAtIndex:0];
             // In temporary Japanese mode '-' and '=' are composition input (the
@@ -5625,11 +5705,11 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         _armedGlossColumn > 0 && [self commitHighlightedGlossColumn:_armedGlossColumn client:sender]) return YES;
     // NSTextInputClient has no caret setter; replacing the known following
     // closing mark atomically advances the caret without duplicating text.
-    if (_appearance.pairedPunctuation && event.characters.length == 1 &&
-        !MSIMESpellingSymbolString(_view, event.characters) &&
+    if (_appearance.pairedPunctuation && [self typedCharactersForEvent:event ignoringModifiers:NO].length == 1 &&
+        !MSIMESpellingSymbolString(_view, [self typedCharactersForEvent:event ignoringModifiers:NO]) &&
         !(event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand))) {
         NSString *following = MSIMETextClientFollowingCharacter((id<MSIMETextClient>)sender);
-        NSString *typed = event.characters;
+        NSString *typed = [self typedCharactersForEvent:event ignoringModifiers:NO];
         if (!following && !_pairedPunctuation.empty()) _pairedPunctuation.clear();
         if (following.length == 1 && [following isEqualToString:typed] &&
             msime::mac::paired_closing_should_skip(_pairedPunctuation, typed.UTF8String, following.UTF8String, YES,
@@ -5647,7 +5727,7 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     if ([self handleJapaneseConversionKey:event client:sender]) return YES;
     // The reference sends `{` down its punctuation path and closes it with `}` (`_GetPairedPunctuationClosingFor`), whether or not a composition is live, and the Linux host does the same. The Engine answers `{` on its ASCII route: while composing it commits the candidate followed by `{`, and idle it leaves the key alone, so the host commits the opening mark itself. The mark is not in MSIMEPunctuationPairs because a symbol candidate that is exactly `{` is not paired by the reference.
     // A scheme outside the Chinese punctuation table (`uses_chinese_punctuation`: Korean, Vietnamese) ignores the Chinese punctuation switch, so its `{` is the Engine's plain ASCII mark. Zhuyin's Shift overlay turns `{` into 『 in the Engine whatever the switches say, so its `{` is the Engine's as well.
-    if ([event.characters isEqualToString:@"{"] &&
+    if ([[self typedCharactersForEvent:event ignoringModifiers:NO] isEqualToString:@"{"] &&
         !(MSIMESchemeRulesApply(_view) && (!msime::mac::scheme::UsesChinesePunctuation(MSIMEViewScheme(_view)) ||
                                            MSIMEViewScheme(_view) == msime::mac::scheme::Zhuyin)) &&
         !(event.modifierFlags & (NSEventModifierFlagControl | NSEventModifierFlagOption | NSEventModifierFlagCommand)) &&
@@ -5698,10 +5778,15 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
         case 125: if (![_appearance navigationEnabled:@"arrows"]) return _panel.isVisible; command = MSIME_NEXT_CANDIDATE; break;
     }
     NSDictionary *transition = nil;
+    // The character this key types under the configured physical keyboard layout,
+    // which is what the Engine is handed and what every decision below reads. It
+    // is read once: asking -characters again somewhere else is how the two ends up
+    // disagreeing about a key.
+    NSString *typedCharacters = [self typedCharactersForEvent:event ignoringModifiers:NO];
     if (command != UINT32_MAX) transition = [_session command:command error:nil];
-    else if (event.characters.length == 1 && [event.characters characterAtIndex:0] <= 127) {
+    else if (typedCharacters.length == 1 && [typedCharacters characterAtIndex:0] <= 127) {
         const BOOL shift = (event.modifierFlags & NSEventModifierFlagShift) != 0;
-        unichar typed = [event.characters characterAtIndex:0];
+        unichar typed = [typedCharacters characterAtIndex:0];
         if (MSIMESchemeTrait(_view, msime::mac::scheme::FoldsLetterCase)) typed = (unichar)msime::mac::KoreanKeyLetter((char)typed, shift);
         _punctuationKeyInFlight = MSIMEASCIIPunctuation(typed) ? typed : 0;
         transition = [_session typeASCII:(uint8_t)typed shift:shift error:nil];
@@ -5709,11 +5794,11 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     if (!transition) { _punctuationKeyInFlight = 0; return NO; }
     [self apply:transition];
     // A punctuation key is the only route that arms the space conversion, as in the reference, whose punctuation handler is the one caller: a candidate picked with Space or a digit never arms, even when its text ends in a mark.
-    if (command == UINT32_MAX && event.characters.length == 1 && MSIMEASCIIPunctuation([event.characters characterAtIndex:0]))
+    if (command == UINT32_MAX && typedCharacters.length == 1 && MSIMEASCIIPunctuation([typedCharacters characterAtIndex:0]))
         [self noteCommittedChinesePunctuation:transition client:sender];
     if (command == UINT32_MAX && [transition[@"handled"] boolValue] &&
-        ![transition[@"commit"] isKindOfClass:NSString.class] && event.characters.length == 1 &&
-        [event.characters characterAtIndex:0] >= 'a' && [event.characters characterAtIndex:0] <= 'z' &&
+        ![transition[@"commit"] isKindOfClass:NSString.class] && typedCharacters.length == 1 &&
+        [typedCharacters characterAtIndex:0] >= 'a' && [typedCharacters characterAtIndex:0] <= 'z' &&
         MSIMEShouldAutoCommitWubi(_appearance.wubiAutoCommitUnique, transition[@"view"])) {
         NSDictionary *committed = [_session command:MSIME_COMMIT_CANDIDATE error:nil];
         if (committed) [self apply:committed];
@@ -5727,9 +5812,9 @@ static __weak MSIMEInputController *MSIMEMusicOwner;
     }
     // A scheme that does not widen (`widens_full_width`: Korean, Vietnamese) writes half-width digits and punctuation whatever the width switch says, as host-api does for the Engine's own commits.
     if (!(MSIMESchemeRulesApply(_view) && !msime::mac::scheme::WidensFullWidth(MSIMEViewScheme(_view))) && _appearance.runtimeFullWidthInput && [_view[@"editing_text"] isKindOfClass:NSString.class] &&
-        ![_view[@"editing_text"] length] && event.characters.length == 1 &&
-        msime::mac::IsFullWidthDirectCharacter([event.characters characterAtIndex:0], event.modifierFlags)) {
-        const unichar converted = msime::mac::FullWidthCharacter([event.characters characterAtIndex:0]);
+        ![_view[@"editing_text"] length] && typedCharacters.length == 1 &&
+        msime::mac::IsFullWidthDirectCharacter([typedCharacters characterAtIndex:0], event.modifierFlags)) {
+        const unichar converted = msime::mac::FullWidthCharacter([typedCharacters characterAtIndex:0]);
         NSString *fullWidthText = [NSString stringWithCharacters:&converted length:1];
         [(id<MSIMETextClient>)sender insertText:fullWidthText replacementRange:NSMakeRange(NSNotFound, NSNotFound)];
         MSIMERecordTypingStatistics(_preferencesDirectory ?: [self runtimeOptions][@"preferences_directory"], fullWidthText,

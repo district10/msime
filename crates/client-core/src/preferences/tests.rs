@@ -3436,3 +3436,180 @@ fn candidate_window_style_rejects_out_of_range_values() {
         "candidate window scale must be 50-200%, opacity 50-100% and corner radius 0-32"
     );
 }
+
+/// Reading physical keys through a layout is off until a document asks for it, and
+/// a document that never mentions it keeps exactly its bytes.
+#[test]
+fn physical_keyboard_starts_at_the_platform_translation() {
+    let mut legacy = serde_json::to_value(PreferencesSnapshot::default()).unwrap();
+    legacy["preferences"]
+        .as_object_mut()
+        .unwrap()
+        .remove("physical_keyboard");
+    let bytes = serde_json::to_vec(&legacy).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferencesStore::new(dir.path());
+    fs::write(store.path(), &bytes).unwrap();
+
+    let loaded = store.load().unwrap();
+    assert_eq!(
+        loaded.preferences.physical_keyboard.mode,
+        PhysicalKeyboardMode::System
+    );
+    assert!(loaded.preferences.physical_keyboard.is_default());
+    assert_eq!(fs::read(store.path()).unwrap(), bytes);
+
+    // A layout at its default is left out of the document rather than written as
+    // "system", so an untouched profile writes what it always wrote.
+    let document = serde_json::to_value(Preferences::default()).unwrap();
+    assert!(document.get("physical_keyboard").is_none());
+}
+
+/// A layout carried as rows survives a save and a load, and writing the rows is
+/// enough to select mapping mode.
+#[test]
+fn physical_keyboard_mapping_roundtrips() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = PreferencesStore::new(dir.path());
+    let rows = PhysicalKeyboardRows {
+        top: ";,.kyfgclz".into(),
+        home: "aoeiudrts".into(),
+        bottom: "pqjhxbm".into(),
+        punct: "n'wv/".into(),
+        shift_top: ":<>KYFGCLZ".into(),
+        shift_home: "AOEIUDRTS".into(),
+        shift_bottom: "PQJHXBM".into(),
+        shift_punct: "N\"WV?".into(),
+    };
+    let preferences = Preferences {
+        physical_keyboard: PhysicalKeyboardPreferences {
+            mode: PhysicalKeyboardMode::Mapping,
+            input_source: String::new(),
+            rows: rows.clone(),
+        },
+        ..Preferences::default()
+    };
+    assert!(preferences.validate().is_ok());
+    let saved = store.save(0, preferences).unwrap();
+    assert_eq!(saved.preferences.physical_keyboard.rows, rows);
+    assert_eq!(
+        store.load().unwrap().preferences.physical_keyboard,
+        saved.preferences.physical_keyboard
+    );
+
+    // The rows are written into the document, so a host that only reads the
+    // shared file sees the layout without needing the platform's catalogue.
+    let document = serde_json::to_value(&saved.preferences).unwrap();
+    assert_eq!(document["physical_keyboard"]["mode"], "mapping");
+    assert_eq!(document["physical_keyboard"]["rows"]["top"], ";,.kyfgclz");
+}
+
+/// A row is exactly as long as the keys it covers, and a shifted row is only
+/// written beside the row it shifts.
+#[test]
+fn physical_keyboard_rejects_rows_that_do_not_fit() {
+    let cases = [
+        // One character short and one too many on the top row.
+        PhysicalKeyboardRows {
+            top: "qwertyuio".into(),
+            ..PhysicalKeyboardRows::default()
+        },
+        PhysicalKeyboardRows {
+            top: "qwertyuiopa".into(),
+            ..PhysicalKeyboardRows::default()
+        },
+        // The rows are not all the same length: punct covers five keys.
+        PhysicalKeyboardRows {
+            top: "qwertyuiop".into(),
+            punct: "n'wv".into(),
+            ..PhysicalKeyboardRows::default()
+        },
+        // A shifted row with nothing to shift.
+        PhysicalKeyboardRows {
+            top: String::new(),
+            shift_top: "QWERTYUIOP".into(),
+            ..PhysicalKeyboardRows::default()
+        },
+        // A layout has no room for a space: a host cannot tell it from "no
+        // character", so it is what the Engine would commit as a space.
+        PhysicalKeyboardRows {
+            top: "qwertyuiop".into(),
+            punct: " 'wv/".into(),
+            ..PhysicalKeyboardRows::default()
+        },
+    ];
+    for rows in cases {
+        let preferences = Preferences {
+            physical_keyboard: PhysicalKeyboardPreferences {
+                mode: PhysicalKeyboardMode::Mapping,
+                input_source: String::new(),
+                rows,
+            },
+            ..Preferences::default()
+        };
+        assert!(
+            matches!(
+                preferences.validate(),
+                Err(PreferencesError::InvalidPhysicalKeyboardRows)
+            ),
+            "a row that does not fit must be rejected"
+        );
+    }
+}
+
+/// A mode is only as good as the value it names: selecting one without the data
+/// it reads would quietly type on the system layout instead.
+#[test]
+fn physical_keyboard_requires_what_its_mode_names() {
+    for (mode, input_source) in [
+        (PhysicalKeyboardMode::InputSource, String::new()),
+        // An input source id is a dotted identifier, not a display name.
+        (PhysicalKeyboardMode::InputSource, "Dvorak 改".into()),
+        (PhysicalKeyboardMode::InputSource, "a/b".into()),
+        (PhysicalKeyboardMode::InputSource, "x".repeat(257)),
+    ] {
+        let preferences = Preferences {
+            physical_keyboard: PhysicalKeyboardPreferences {
+                mode,
+                input_source,
+                rows: PhysicalKeyboardRows::default(),
+            },
+            ..Preferences::default()
+        };
+        assert!(
+            matches!(
+                preferences.validate(),
+                Err(PreferencesError::InvalidPhysicalKeyboardInputSource)
+            ),
+            "input_source mode must name an identifier"
+        );
+    }
+    // Mapping without rows has nothing to translate through.
+    let preferences = Preferences {
+        physical_keyboard: PhysicalKeyboardPreferences {
+            mode: PhysicalKeyboardMode::Mapping,
+            input_source: String::new(),
+            rows: PhysicalKeyboardRows::default(),
+        },
+        ..Preferences::default()
+    };
+    assert!(matches!(
+        preferences.validate(),
+        Err(PreferencesError::InvalidPhysicalKeyboardRows)
+    ));
+
+    // A layout kept while another mode is selected stays valid, so switching away
+    // and back does not have to retype it.
+    let preferences = Preferences {
+        physical_keyboard: PhysicalKeyboardPreferences {
+            mode: PhysicalKeyboardMode::System,
+            input_source: "org.unknown.keylayout.dvorak".into(),
+            rows: PhysicalKeyboardRows {
+                top: ";,.kyfgclz".into(),
+                ..PhysicalKeyboardRows::default()
+            },
+        },
+        ..Preferences::default()
+    };
+    assert!(preferences.validate().is_ok());
+}
