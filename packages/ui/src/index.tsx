@@ -1694,6 +1694,27 @@ export type Preferences = {
   scheme: InputScheme;
   /** Width used when desktop hosts commit printable ASCII characters. */
   character_width?: "halfwidth" | "fullwidth";
+  /**
+   * How a desktop host reads a physical key press, and the layout it reads it
+   * through. `system` leaves the platform's own translation; `input_source` names
+   * an installed layout the host translates through; `mapping` carries the layout
+   * as the characters each key produces. No control writes this yet, so it is
+   * preserved rather than edited - a machine configures it in `preferences.json`.
+   */
+  physical_keyboard?: {
+    mode?: "system" | "input_source" | "mapping";
+    input_source?: string;
+    rows?: {
+      top?: string;
+      home?: string;
+      bottom?: string;
+      punct?: string;
+      shift_top?: string;
+      shift_home?: string;
+      shift_bottom?: string;
+      shift_punct?: string;
+    };
+  };
   wubi_code_hint?: boolean;
   touch_keyboard_layout?: "twenty_six_key" | "nine_key" | "handwriting";
   touch_keyboard_schemes?: TouchKeyboardSchemePreferences;
