@@ -161,6 +161,52 @@ constexpr int PhysicalCandidatePageDirection(unsigned short keyCode)
     }
 }
 
+// Which paging binding a key belongs to. The shortcuts are named after characters
+// (`-` `=`, `[` `]`, `,` `.`), so a host that reads keys through a keyboard layout
+// has to resolve them from the character the key types: with a layout configured
+// the physical `,` position may type `w`, and paging on it would swallow a letter
+// the user meant to type. A host that reads keys as the platform translated them
+// keeps resolving by the physical ANSI key, which is the Windows contract.
+enum class CandidatePagingBinding { None, MinusEqual, Brackets, CommaPeriod, PageUpDown };
+
+constexpr CandidatePagingBinding PhysicalCandidatePagingBinding(unsigned short keyCode) {
+    switch (keyCode) {
+    case 27: case 24: return CandidatePagingBinding::MinusEqual;   // - and =
+    case 33: case 30: return CandidatePagingBinding::Brackets;     // [ and ]
+    case 43: case 47: return CandidatePagingBinding::CommaPeriod;  // , and .
+    case 116: case 121: return CandidatePagingBinding::PageUpDown; // Page Up and Page Down
+    default: return CandidatePagingBinding::None;
+    }
+}
+
+constexpr CandidatePagingBinding CharacterCandidatePagingBinding(char character) {
+    switch (character) {
+    case '-': case '=': return CandidatePagingBinding::MinusEqual;
+    case '[': case ']': return CandidatePagingBinding::Brackets;
+    case ',': case '.': return CandidatePagingBinding::CommaPeriod;
+    default: return CandidatePagingBinding::None;
+    }
+}
+
+// The direction a typed character pages in, the character reading of
+// PhysicalCandidatePageDirection. Page Up and Page Down are not named after
+// characters and stay physical either way.
+constexpr int CharacterCandidatePageDirection(char character) {
+    switch (character) {
+    case '-': case ',': case '[': return -1;
+    case '=': case '.': case ']': return 1;
+    default: return 0;
+    }
+}
+
+// Word-to-character is named after characters too, so a host reading keys through
+// a layout matches the character alone: the physical position no longer says which
+// key this is.
+constexpr bool CharacterWordCharacterKey(bool brackets, char character) {
+    if (brackets) return character == '[' || character == ']';
+    return character == '-' || character == '=';
+}
+
 // Word-to-character is stricter than paging: both the physical key and its
 // expected unshifted punctuation must match.  This prevents a keyboard layout
 // from making an unrelated physical key with the same glyph select an edge.

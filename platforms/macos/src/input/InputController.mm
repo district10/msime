@@ -4936,6 +4936,12 @@ static BOOL MSIMEClaimPreferenceRecovery(NSString *directory) {
     // A key the Engine spells with, such as expression mode's '-', is input rather than an edge pick.
     if (MSIMESpellingSymbol(_view, character)) return NO;
     const BOOL brackets = [wordCharacter[@"keys"] isEqual:@"brackets"];
+    // Same reading as paging: with a keyboard layout configured the character the
+    // key types decides, because the physical position no longer says which key it
+    // is. Without one the pair is checked against the physical ANSI key too, which
+    // is what keeps a layout from making an unrelated key pick an edge.
+    if (_physicalKeyboardMapped)
+        return msime::mac::CharacterWordCharacterKey(brackets, static_cast<char>(character));
     return msime::mac::IsPhysicalWordCharacterKey(event.keyCode, brackets, static_cast<char>(character)) &&
         (character == (brackets ? '[' : '-') || character == (brackets ? ']' : '='));
 }
@@ -5677,10 +5683,26 @@ static std::string MSIMELayoutRowText(id value) {
     // text at all). Unicode '+' is an Engine code-sequence character, the
     // Japanese minus/equal keys remain composition input, and so does any key
     // the Engine spells with (expression mode's '-' and '.').
-    const int physicalPageDirection = msime::mac::PhysicalCandidatePageDirection(event.keyCode);
+    // Page Up and Page Down are not named after characters, so they stay physical
+    // wherever the reading comes from. Everything else here is: `-` `=`, `[` `]`,
+    // `,` `.`. A host that reads keys through a keyboard layout therefore has to
+    // resolve them from the character the key types - a layout that puts a letter
+    // on the physical `,` must not turn that letter into a page turn, and the key
+    // it moved `,` to has to page in its place. A host reading the platform's own
+    // characters keeps the physical ANSI key, which is the Windows contract.
+    const BOOL physicalPageKey = event.keyCode == 116 || event.keyCode == 121;
+    NSString *pagingCharacters = [self typedCharactersForEvent:event ignoringModifiers:YES];
+    const char pagingCharacter = pagingCharacters.length == 1 ? static_cast<char>([pagingCharacters characterAtIndex:0]) : '\0';
+    const BOOL layoutPaging = _physicalKeyboardMapped && !physicalPageKey;
+    const int physicalPageDirection = layoutPaging
+        ? msime::mac::CharacterCandidatePageDirection(pagingCharacter)
+        : msime::mac::PhysicalCandidatePageDirection(event.keyCode);
+    const msime::mac::CandidatePagingBinding pagingBinding = layoutPaging
+        ? msime::mac::CharacterCandidatePagingBinding(pagingCharacter)
+        : msime::mac::PhysicalCandidatePagingBinding(event.keyCode);
     const BOOL japaneseMinusEqual = msime::mac::IsJapaneseMinusEqualKey(
         MSIMEViewScheme(_view), [_view[@"local_mode"] isEqual:@"temporary_japanese"],
-        event.keyCode, 0);
+        layoutPaging ? 0 : event.keyCode, layoutPaging ? pagingCharacter : 0);
     const BOOL engineInputKey = ([_view[@"local_mode"] isEqual:@"unicode"] &&
         [[self typedCharactersForEvent:event ignoringModifiers:YES] isEqual:@"+"]) || MSIMESpellingSymbolString(_view, [self typedCharactersForEvent:event ignoringModifiers:YES]);
     // Word-to-character owns whichever pair it is bound to, and paging does not get to take it. The two are
@@ -5695,16 +5717,12 @@ static std::string MSIMELayoutRowText(id value) {
     const BOOL candidateListMark = MSIMECandidateListOpen(_view) && event.keyCode != 116 && event.keyCode != 121;
     if (_panel.isVisible && !(event.modifierFlags & NSEventModifierFlagShift) &&
         physicalPageDirection != 0 && !japaneseMinusEqual && !engineInputKey && !wordCharacterOwnsKey && !candidateListMark) {
-        const BOOL previous = physicalPageDirection < 0 &&
-            ((event.keyCode == 27 && [_appearance navigationEnabled:@"minus_equal"]) ||
-             (event.keyCode == 33 && [_appearance navigationEnabled:@"brackets"]) ||
-             (event.keyCode == 43 && [_appearance navigationEnabled:@"comma_period"]) ||
-             (event.keyCode == 116 && [_appearance navigationEnabled:@"page_up_down"]));
-        const BOOL next = physicalPageDirection > 0 &&
-            ((event.keyCode == 24 && [_appearance navigationEnabled:@"minus_equal"]) ||
-             (event.keyCode == 30 && [_appearance navigationEnabled:@"brackets"]) ||
-             (event.keyCode == 47 && [_appearance navigationEnabled:@"comma_period"]) ||
-             (event.keyCode == 121 && [_appearance navigationEnabled:@"page_up_down"]));
+        const BOOL enabled = [_appearance navigationEnabled:@"minus_equal"] && pagingBinding == msime::mac::CandidatePagingBinding::MinusEqual;
+        const BOOL bracketsEnabled = [_appearance navigationEnabled:@"brackets"] && pagingBinding == msime::mac::CandidatePagingBinding::Brackets;
+        const BOOL commaPeriodEnabled = [_appearance navigationEnabled:@"comma_period"] && pagingBinding == msime::mac::CandidatePagingBinding::CommaPeriod;
+        const BOOL pageKeysEnabled = [_appearance navigationEnabled:@"page_up_down"] && pagingBinding == msime::mac::CandidatePagingBinding::PageUpDown;
+        const BOOL previous = physicalPageDirection < 0 && (enabled || bracketsEnabled || commaPeriodEnabled || pageKeysEnabled);
+        const BOOL next = physicalPageDirection > 0 && (enabled || bracketsEnabled || commaPeriodEnabled || pageKeysEnabled);
         if (previous || next) {
             [self apply:[_session command:previous ? MSIME_PREVIOUS_PAGE : MSIME_NEXT_PAGE error:nil]];
             return YES;

@@ -116,6 +116,26 @@ int main() {
                 @"mode" : @"input_source", @"input_source" : @"com.apple.keylayout.US"}}];
         assert([Typed(controller, 12, @"x", 0) isEqual:@"q"]);
 
+        // The shortcuts named after characters follow the layout too. A layout that
+        // puts a letter on the physical `,` must not page on it - that letter is
+        // what the user typed - and the key it moved `,` onto has to page instead.
+        assert(msime::mac::CharacterCandidatePageDirection('w') == 0);
+        assert(msime::mac::CharacterCandidatePageDirection(',') == -1);
+        assert(msime::mac::CharacterCandidatePageDirection('.') == 1);
+        assert(msime::mac::CharacterCandidatePageDirection('-') == -1);
+        assert(msime::mac::CharacterCandidatePageDirection('=') == 1);
+        assert(msime::mac::CharacterCandidatePagingBinding(',') == msime::mac::CandidatePagingBinding::CommaPeriod);
+        assert(msime::mac::CharacterCandidatePagingBinding('[') == msime::mac::CandidatePagingBinding::Brackets);
+        assert(msime::mac::CharacterCandidatePagingBinding('w') == msime::mac::CandidatePagingBinding::None);
+        // Page Up and Page Down are not named after characters and keep their own
+        // physical binding whichever reading is in force.
+        assert(msime::mac::PhysicalCandidatePagingBinding(116) == msime::mac::CandidatePagingBinding::PageUpDown);
+        assert(msime::mac::PhysicalCandidatePagingBinding(121) == msime::mac::CandidatePagingBinding::PageUpDown);
+        assert(msime::mac::PhysicalCandidatePagingBinding(27) == msime::mac::CandidatePagingBinding::MinusEqual);
+        assert(msime::mac::CharacterWordCharacterKey(false, '-') && msime::mac::CharacterWordCharacterKey(false, '='));
+        assert(msime::mac::CharacterWordCharacterKey(true, '[') && msime::mac::CharacterWordCharacterKey(true, ']'));
+        assert(!msime::mac::CharacterWordCharacterKey(true, 'w') && !msime::mac::CharacterWordCharacterKey(false, ','));
+
         // Back to the platform: a layout that is configured but not selected is not
         // read, and the mode decides rather than the presence of rows.
         [controller
