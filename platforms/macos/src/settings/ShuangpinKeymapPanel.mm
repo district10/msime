@@ -1,6 +1,7 @@
 #import "ShuangpinKeymapPanel.h"
 // Migrated from MSIME-Apple b637828e15eafcb5e459edd270a962dd14517285.
 
+#include "../input/PhysicalKeyboardLayout.h"
 #include "ShuangpinProfileNames.h"
 #include "msime_client.h"
 #include <cstring>
@@ -61,17 +62,6 @@ NSString *CodesText(NSString *hint)
         [sides addObject:[[side componentsSeparatedByString:@" "] componentsJoinedByString:@" · "]];
     }
     return [sides componentsJoinedByString:@" / "];
-}
-
-NSArray<NSDictionary<NSString *, NSString *> *> *KeyDefinitions(NSArray<NSString *> *keys,
-                                                                NSDictionary<NSString *, NSString *> *hints)
-{
-    NSMutableArray<NSDictionary<NSString *, NSString *> *> *definitions = [NSMutableArray arrayWithCapacity:keys.count];
-    for (NSString *key in keys)
-    {
-        [definitions addObject:Key(key, CodesText(hints[key] ?: @""))];
-    }
-    return definitions;
 }
 
 CGFloat Clamp(CGFloat value, CGFloat minimum, CGFloat maximum)
@@ -219,19 +209,40 @@ NSString *AccessibleKeymapDescription(NSArray<MSIMEShuangpinKeyView *> *keyViews
 }
 } // namespace
 
-NSArray<NSArray<NSDictionary<NSString *, NSString *> *> *> *MSIMEShuangpinKeymapRows(NSString *profileName)
+NSArray<NSArray<NSDictionary<NSString *, NSString *> *> *> *
+MSIMEShuangpinKeymapRowsForCharacters(NSString *profileName,
+                                      NSDictionary<NSString *, NSString *> *characters)
 {
     NSDictionary<NSString *, NSString *> *hints = ProfileTable(msime_client_shuangpin_key_hints, profileName);
-    NSMutableArray<NSString *> *homeKeys = [@[ @"A", @"S", @"D", @"F", @"G", @"H", @"J", @"K", @"L" ] mutableCopy];
-    if (hints[@";"].length > 0)
+    NSMutableArray<NSMutableArray<NSDictionary<NSString *, NSString *> *> *> *rows =
+        [NSMutableArray arrayWithCapacity:msime::mac::PhysicalKeyboardKeyRowCounts.size()];
+    NSUInteger index = 0;
+    for (const size_t count : msime::mac::PhysicalKeyboardKeyRowCounts)
     {
-        [homeKeys addObject:@";"];
+        NSMutableArray<NSDictionary<NSString *, NSString *> *> *definitions = [NSMutableArray arrayWithCapacity:count];
+        for (NSUInteger end = index + count; index < end; ++index)
+        {
+            NSString *position = @(msime::mac::PhysicalKeyboardKeys[index].second);
+            NSString *face = characters[position].length > 0 ? characters[position].uppercaseString : position;
+            NSString *codes = hints[face];
+            // A character the profile gives no initials and no finals is not a
+            // shuangpin key at all, so its position is left out rather than drawn
+            // blank. That is what keeps the right-hand punctuation off every chart
+            // drawn for the ANSI letters, where none of it carries a code.
+            if (codes.length == 0)
+            {
+                continue;
+            }
+            [definitions addObject:Key(face, CodesText(codes))];
+        }
+        [rows addObject:definitions];
     }
-    return @[
-        KeyDefinitions(@[ @"Q", @"W", @"E", @"R", @"T", @"Y", @"U", @"I", @"O", @"P" ], hints),
-        KeyDefinitions(homeKeys, hints),
-        KeyDefinitions(@[ @"Z", @"X", @"C", @"V", @"B", @"N", @"M" ], hints),
-    ];
+    return rows;
+}
+
+NSArray<NSArray<NSDictionary<NSString *, NSString *> *> *> *MSIMEShuangpinKeymapRows(NSString *profileName)
+{
+    return MSIMEShuangpinKeymapRowsForCharacters(profileName, @{});
 }
 
 NSString *MSIMEShuangpinZeroInitialText(NSString *profileName)
@@ -287,6 +298,7 @@ NSRect MSIMEShuangpinKeymapPanelFrame(NSRect caretRect, NSSize panelSize, CGFloa
 {
     NSMutableArray<MSIMEShuangpinKeyView *> *_keyViews;
     NSString *_profileName;
+    NSDictionary<NSString *, NSString *> *_physicalCharacters;
     NSColor *_accentColor;
 }
 
@@ -326,7 +338,27 @@ NSRect MSIMEShuangpinKeymapPanelFrame(NSRect caretRect, NSSize panelSize, CGFloa
         return;
     }
     _profileName = [normalized copy];
+    [self rebuildKeymap];
+}
 
+- (void)setPhysicalKeyboardCharacters:(NSDictionary<NSString *, NSString *> *)characters
+{
+    NSDictionary<NSString *, NSString *> *next = [characters copy] ?: @{};
+    if ([_physicalCharacters isEqualToDictionary:next])
+    {
+        return;
+    }
+    _physicalCharacters = next;
+    if (_profileName.length > 0)
+    {
+        [self rebuildKeymap];
+    }
+}
+
+// Builds the panel around the current profile and keyboard characters. Both setters
+// land here, since either one changes what the keys say.
+- (void)rebuildKeymap
+{
     NSVisualEffectView *background = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
     background.material = NSVisualEffectMaterialPopover;
     background.blendingMode = NSVisualEffectBlendingModeBehindWindow;
@@ -352,7 +384,7 @@ NSRect MSIMEShuangpinKeymapPanelFrame(NSRect caretRect, NSSize panelSize, CGFloa
 
     _keyViews = [NSMutableArray arrayWithCapacity:27];
     NSArray<NSArray<NSDictionary<NSString *, NSString *> *> *> *definitions =
-        MSIMEShuangpinKeymapRows(_profileName);
+        MSIMEShuangpinKeymapRowsForCharacters(_profileName, _physicalCharacters);
     NSStackView *topRow = KeyRow(definitions[0], _keyViews, _accentColor);
     NSStackView *homeRow = KeyRow(definitions[1], _keyViews, _accentColor);
     NSStackView *bottomRow = KeyRow(definitions[2], _keyViews, _accentColor);

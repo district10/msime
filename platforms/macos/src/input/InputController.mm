@@ -5133,6 +5133,20 @@ static std::string MSIMELayoutRowText(id value) {
 // exactly as each call site did before. Command, Control and Option belong to the
 // application rather than to the layout: a shortcut keeps the platform's
 // translation, because a layout describes typing and not chords.
+// The character each physical position types under the configured keyboard layout,
+// keyed by the ANSI letter printed on that position, for the shuangpin keymap. Empty
+// when no layout is configured, and the chart then draws the ANSI letters - which is
+// what someone typing on the layout the system is set to should see.
+- (NSDictionary<NSString *, NSString *> *)physicalKeyboardPositionCharacters {
+    if (!_physicalKeyboardMapped) return @{};
+    NSMutableDictionary *characters = [NSMutableDictionary dictionary];
+    for (const auto &key : msime::mac::PhysicalKeyboardKeys) {
+        NSString *face = MSIMEPhysicalKeyboardFace(_physicalKeyboardRows, _physicalKeyboardSource, key.first, false);
+        if (face.length) characters[@(key.second)] = face;
+    }
+    return characters;
+}
+
 // What the configured keyboard layout puts on each physical letter key, for the
 // screen keyboard's faces. Empty when no layout is configured, and the panel then
 // draws its own QWERTY legends - which is also what a host that translates
@@ -6270,6 +6284,9 @@ static std::string MSIMELayoutRowText(id value) {
     [_activeClient attributesForCharacterIndex:0 lineHeightRectangle:&cursor];
     if (!MSIMEValidCaret(cursor)) { [_keymapPanel orderOut:nil]; return; }
     if (!_keymapPanel) _keymapPanel = [[MSIMEShuangpinKeymapPanel alloc] init];
+    // Before the profile, so the first build already has the faces: the profile
+    // setter is what constructs the panel, and the faces are what its keys say.
+    [_keymapPanel setPhysicalKeyboardCharacters:[self physicalKeyboardPositionCharacters]];
     [_keymapPanel setProfileName:profile];
     // The keymap opens beside the candidate window, so it is drawn in the candidate window's mode and marks the current key in the theme's accent.
     _keymapPanel.appearance = [_appearance candidateAppearanceOverride];

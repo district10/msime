@@ -25,6 +25,7 @@
 #include <array>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace msime::mac {
 
@@ -56,6 +57,26 @@ inline constexpr std::array<unsigned short, 7> PhysicalKeyboardBottomKeys{
     6, 7, 8, 9, 11, 45, 46};  // Z X C V B N M
 inline constexpr std::array<unsigned short, 5> PhysicalKeyboardPunctKeys{
     41, 39, 43, 47, 44};  // ; ' , . /
+
+/// The physical keys a keyboard layout can move, in keyboard order, as the key code
+/// and the ANSI letter printed on that position. The four row tables above are these
+/// same keys grouped for the translation; this is the flat order a keyboard picture
+/// is drawn in, so the shuangpin keymap and the host resolve the same positions.
+///
+/// The right-hand punctuation is part of it because a layout may put a letter there:
+/// the Dvorak family does, which is why a keymap drawn from the ANSI letters alone
+/// loses those letters for anyone typing on one.
+inline constexpr std::array<std::pair<unsigned short, const char *>, 31> PhysicalKeyboardKeys{{
+    {12, "Q"}, {13, "W"}, {14, "E"}, {15, "R"}, {17, "T"}, {16, "Y"},
+    {32, "U"}, {34, "I"}, {31, "O"}, {35, "P"},
+    {0, "A"}, {1, "S"}, {2, "D"}, {3, "F"}, {5, "G"},
+    {4, "H"}, {38, "J"}, {40, "K"}, {37, "L"}, {41, ";"}, {39, "'"},
+    {6, "Z"}, {7, "X"}, {8, "C"}, {9, "V"}, {11, "B"}, {45, "N"}, {46, "M"},
+    {43, ","}, {47, "."}, {44, "/"},
+}};
+
+/// How many of [`PhysicalKeyboardKeys`] each row holds, top to bottom.
+inline constexpr std::array<size_t, 3> PhysicalKeyboardKeyRowCounts{10, 11, 10};
 
 /// Where a key code sits: which row, and how far into it. A key no row covers
 /// answers a row of -1, which is the digit row, the left-hand punctuation and

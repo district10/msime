@@ -60,6 +60,41 @@ int main() {
     for (unsigned short keyCode : {18, 19, 20, 21, 23, 22, 26, 28, 25, 29, 27, 24, 33, 30, 42, 50, 36, 51, 65, 67})
         assert(PhysicalKeyboardRowCharacter(rows, keyCode, false) == '\0');
 
+    // The flat keyboard order and the four translation tables name the same keys. The
+    // two orders differ - the chart interleaves the right-hand punctuation into the
+    // rows it sits in, the translation keeps it as a row of its own - so they are
+    // compared through the key code, which is what makes a chart drawn from one and
+    // translated through the other line up.
+    {
+        std::string chart;
+        for (const auto &key : msime::mac::PhysicalKeyboardKeys) chart += key.second;
+        assert(chart == "QWERTYUIOPASDFGHJKL;'ZXCVBNM,./");
+        const auto letter_of = [](unsigned short code) -> const char * {
+            for (const auto &key : msime::mac::PhysicalKeyboardKeys)
+                if (key.first == code) return key.second;
+            return nullptr;
+        };
+        const std::string expected = "QWERTYUIOP" "ASDFGHJKL" "ZXCVBNM" ";',./";
+        size_t letter = 0;
+        const auto same_keys = [&](const auto &row) {
+            for (const unsigned short code : row) {
+                const char *face = letter_of(code);
+                assert(face != nullptr);
+                assert(face[0] == expected[letter]);
+                ++letter;
+            }
+        };
+        same_keys(msime::mac::PhysicalKeyboardTopKeys);
+        same_keys(msime::mac::PhysicalKeyboardHomeKeys);
+        same_keys(msime::mac::PhysicalKeyboardBottomKeys);
+        same_keys(msime::mac::PhysicalKeyboardPunctKeys);
+        assert(letter == expected.size());
+        assert(letter == msime::mac::PhysicalKeyboardKeys.size());
+        size_t counted = 0;
+        for (const size_t count : msime::mac::PhysicalKeyboardKeyRowCounts) counted += count;
+        assert(counted == msime::mac::PhysicalKeyboardKeys.size());
+    }
+
     // Row membership by key code, including the two ends of the punctuation row.
     const msime::mac::PhysicalKeyboardPosition q = msime::mac::PhysicalKeyboardPositionOf(12);
     assert(q.row == 0 && q.index == 0);
