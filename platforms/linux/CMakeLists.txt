@@ -536,6 +536,12 @@ elseif(MSIME_ENABLE_PACKAGING)
   # A package without the runtime would offer on-device recognition that fails at the first dictation.
   message(FATAL_ERROR "Packaging requires MSIME_VOICE_RUNTIME_DIR; fetch it with scripts/fetch_voice_runtime.py (package-container.sh does)")
 endif()
+# 上面只核对运行库的文件在不在；这里让构建出的 msime-voice-local 真正打开它（dlopen 并解析全部符号），各打包路线的 ctest 都会跑到。
+if(BUILD_TESTING AND MSIME_VOICE_RUNTIME_DIR)
+  add_test(NAME linux-voice-local-runtime
+           COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/voice/local_runtime.py"
+                   $<TARGET_FILE:msime-voice-local> "${MSIME_VOICE_RUNTIME_DIR}/libsherpa-onnx-c-api.so")
+endif()
 install(FILES scripts/requirements-voice.txt DESTINATION "${CMAKE_INSTALL_DATADIR}/${MSIME_CLIENT_DIRECTORY}")
 file(RELATIVE_PATH MSIME_VOICE_CUE_RELATIVE "${CMAKE_INSTALL_FULL_BINDIR}"
      "${CMAKE_INSTALL_FULL_DATADIR}/${MSIME_CLIENT_DIRECTORY}/voice")
@@ -596,6 +602,12 @@ if(MSIME_HANDWRITING_MODEL_DIR)
   install(FILES "${MSIME_HANDWRITING_LOCK_FILE}" DESTINATION "${CMAKE_INSTALL_DATADIR}/${MSIME_CLIENT_DIRECTORY}")
 elseif(MSIME_ENABLE_PACKAGING AND MSIME_EDITION_HANDWRITING)
   message(FATAL_ERROR "Packaging requires the handwriting model; fetch it with scripts/fetch_handwriting_model.py (package-container.sh does)")
+endif()
+# 上面只按锁核对模型的字节；这里用构建出的识别入口真正加载它并识别一笔，各打包路线的 ctest 都会跑到。
+if(BUILD_TESTING AND MSIME_HANDWRITING_MODEL_DIR)
+  add_test(NAME linux-handwriting-local-model
+           COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/provider/handwriting_local_model.py"
+                   $<TARGET_FILE:msime-linux-handwriting> "${MSIME_HANDWRITING_MODEL_DIR}/handwriting-zh_CN.model")
 endif()
 if(MSIME_EMOJI_RESOURCES)
   if(NOT IS_DIRECTORY "${MSIME_EMOJI_RESOURCES}")
@@ -825,6 +837,12 @@ if(MSIME_MCP_BINARY)
     message(FATAL_ERROR "MSIME_MCP_BINARY does not exist: ${MSIME_MCP_BINARY}")
   endif()
   install(PROGRAMS "${MSIME_MCP_BINARY}" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  # full 再以 msime 的名字放一个指向它的相对链接，供在终端里手动敲 msime expand、msime config，与 macOS 的 Homebrew cask 相同。其他版本装在自己的前缀下，那里的 bin 不在 PATH 上，同名的命令也只能有一个，留给 full。
+  if(MSIME_EDITION_IS_FULL)
+    file(MAKE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/mcp")
+    file(CREATE_LINK msime-mcp "${CMAKE_CURRENT_BINARY_DIR}/mcp/msime" SYMBOLIC)
+    install(FILES "${CMAKE_CURRENT_BINARY_DIR}/mcp/msime" DESTINATION "${CMAKE_INSTALL_BINDIR}")
+  endif()
 endif()
 # The built-in sound packs, synthesized by scripts/generate_sound_packs.py and dedicated to the public domain, beside the resource directory rather than in it: that directory has to hold exactly what the dictionary lock pins. The hosts and the settings window name this directory to client-core as the built-in pack root.
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../../resources/sound-packs/"
@@ -917,12 +935,15 @@ if(WAYLAND_CLIENT_FOUND AND WAYLAND_SCANNER_EXECUTABLE AND MSIME_XDG_SHELL_XML)
   endif()
 endif()
 add_test(NAME linux-wave-overlay-model COMMAND linux-wave-overlay-model-test)
-add_executable(linux-wave-overlay-placement-test tests/runtime/wave_overlay_placement.cpp)
-target_compile_features(linux-wave-overlay-placement-test PRIVATE cxx_std_17)
-target_compile_options(linux-wave-overlay-placement-test PRIVATE -Wall -Wextra -Werror)
-target_include_directories(linux-wave-overlay-placement-test PRIVATE src)
-target_link_libraries(linux-wave-overlay-placement-test PRIVATE nlohmann_json::nlohmann_json)
-add_test(NAME linux-wave-overlay-placement COMMAND linux-wave-overlay-placement-test)
+# The placement it tests is X11's and reads the RandR headers, so it builds where the X11 surface does.
+if(X11_SURFACE_FOUND)
+  add_executable(linux-wave-overlay-placement-test tests/runtime/wave_overlay_placement.cpp)
+  target_compile_features(linux-wave-overlay-placement-test PRIVATE cxx_std_17)
+  target_compile_options(linux-wave-overlay-placement-test PRIVATE -Wall -Wextra -Werror)
+  target_include_directories(linux-wave-overlay-placement-test PRIVATE src)
+  target_link_libraries(linux-wave-overlay-placement-test PRIVATE nlohmann_json::nlohmann_json)
+  add_test(NAME linux-wave-overlay-placement COMMAND linux-wave-overlay-placement-test)
+endif()
 add_executable(linux-mode-badge-style-test tests/runtime/mode_badge_style.cpp)
 target_compile_features(linux-mode-badge-style-test PRIVATE cxx_std_17)
 target_compile_options(linux-mode-badge-style-test PRIVATE -Wall -Wextra -Werror)
