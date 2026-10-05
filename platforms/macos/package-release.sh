@@ -312,14 +312,15 @@ mkdir -p "$stage"
 ditto "$app" "$stage/$app_name"
 ln -s /Applications "$stage/Applications"
 # Dragging the app is only half the install: the input method appears once the app has been opened and its install window's 立即安装 pressed, and on macOS 27 the user then adds it in System Settings, which the app walks them through. Finder shows the app by its localised name (水杉输入法 for full, apps/desktop/src-tauri/macos/*.lproj/InfoPlist.strings; each edition's own name otherwise), so the instructions call it that rather than by its file name.
+# ${display_name} 必须带花括号：macOS 27 的 /bin/bash 3.2 在无效 UTF-8 边界上把后面的话吞进变量名，set -u 直接报 unbound variable。
 printf '%s\n' \
-  "$display_name macOS 安装说明" \
+  "${display_name} macOS 安装说明" \
   '' \
-  "1. 把「$display_name」拖到「应用程序」文件夹。" \
-  "2. 打开「应用程序」里的「$display_name」，点「立即安装」把输入法安装到本机，再按设置页的提示在「系统设置」→「键盘」→「文字输入」→「输入法」中添加它。" \
-  "3. 添加后在菜单栏的输入法菜单中选「$display_name」，或按 Control+空格 切换。" \
+  "1. 把「${display_name}」拖到「应用程序」文件夹。" \
+  "2. 打开「应用程序」里的「${display_name}」，点「立即安装」把输入法安装到本机，再按设置页的提示在「系统设置」→「键盘」→「文字输入」→「输入法」中添加它。" \
+  "3. 添加后在菜单栏的输入法菜单中选「${display_name}」，或按 Control+空格 切换。" \
   '' \
-  "只把「$display_name」拖进「应用程序」而不打开它，系统里不会出现这个输入法。" \
+  "只把「${display_name}」拖进「应用程序」而不打开它，系统里不会出现这个输入法。" \
   > "$stage/安装说明.txt"
 dmg="$out_dir/$dmg_prefix-$version-$arch.dmg"
 rm -f "$dmg"
