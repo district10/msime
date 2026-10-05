@@ -703,8 +703,8 @@ impl PhysicalKeyboardPreferences {
     }
 
     /// Whether a row is usable for a run of `keys` keys: either absent, or exactly
-    /// that long and made of printable ASCII. A space is deliberately not allowed
-    /// - it is the one character a host cannot tell from "no character", so a
+    /// that long and made of printable ASCII. A space is deliberately not allowed,
+    /// because it is the one character a host cannot tell from "no character", so a
     /// layout that wants one on a key keeps the platform's own.
     fn row_fits(row: &str, keys: usize) -> bool {
         row.is_empty()
