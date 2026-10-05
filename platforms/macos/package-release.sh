@@ -18,6 +18,7 @@
 #   MSIME_SPARKLE_ROOT            required; directory containing the pinned Sparkle.framework (see README.md)
 #   CARGO_TARGET_DIR              defaults to target/ in the repository
 #   MSIME_MACOS_BUILD_DIR         CMake build tree; defaults to target/macos-release
+#   MSIME_DOWNLOAD_MIRROR         可选；直连 GitHub 不稳的网络里给词库与资源包下载地址加镜像前缀（如 https://gh-proxy.com），留空直连
 #   MACOS_SIGNING_IDENTITY        a "Developer ID Application: ... (TEAMID)" identity in the keychain. Without it everything is signed ad-hoc: the package builds and the settings app runs, but macOS will not register the embedded input method as an input source (see scripts/install.sh)
 #   APPLE_ID, APPLE_TEAM_ID, APPLE_APP_SPECIFIC_PASSWORD
 #                                 when all three are set (and an identity is), the DMG is notarized and stapled
